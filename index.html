@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitação de Material ao Almoxarifado</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .form-section, .tabs-container { display: none; }
+        .form-section.active, .tabs-container.active { display: block; }
+        .matricula-feedback { transition: opacity 0.3s; }
+        .tab-button.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        .modal-enter { animation: fadeIn 0.3s ease-out forwards; }
+        .modal-leave { animation: fadeOut 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        details > summary { list-style: none; cursor: pointer; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary .chevron { transition: transform 0.2s; }
+        details[open] > summary .chevron { transform: rotate(90deg); }
+        .low-stock-warning {
+            background-color: #fef9c3 !important;
+            border-left: 4px solid #f59e0b;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="container mx-auto max-w-4xl w-full">
+        <!-- Main Container -->
+        <div class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
+            <h1 class="text-2xl md:text-3xl font-bold mb-6 text-gray-700 text-center">
+                <i class="fas fa-paper-plane text-blue-500 mr-3"></i>Portal de Solicitação
+            </h1>
+
+            <!-- User Identification Section -->
+            <div id="identification-section">
+                <label for="solicitante-matricula" class="block text-sm font-medium text-gray-700 mb-1">Digite sua Matrícula para Começar</label>
+                <div class="flex items-center gap-2">
+                    <div class="relative flex-grow">
+                        <input type="text" id="solicitante-matricula" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" placeholder="Sua matrícula aqui..." required>
+                        <span id="matricula-feedback-icon" class="matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-0"></span>
+                    </div>
+                    <button type="button" id="acessar-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-5 rounded-lg">Acessar</button>
+                    <button type="button" id="trocar-usuario-btn" class="hidden bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-5 rounded-lg">Trocar</button>
+                </div>
+                <div id="professor-info" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md hidden">
+                    <span class="font-medium text-blue-800">Colaborador:</span>
+                    <span id="professor-name-display" class="font-bold text-blue-900"></span>
+                </div>
+                <p id="matricula-error" class="text-red-600 text-sm font-semibold mt-1 hidden">Matrícula não encontrada.</p>
+            </div>
+
+            <!-- Tabs Navigation -->
+            <div class="tabs-container mt-8">
+                <div class="border-b border-gray-200">
+                    <nav class="flex -mb-px" aria-label="Tabs">
+                        <button data-tab="solicitacao" class="tab-button active w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
+                           <i class="fas fa-edit mr-2"></i>Fazer Solicitação
+                        </button>
+                        <button data-tab="kits" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
+                           <i class="fas fa-box-archive mr-2"></i>Meus Kits
+                        </button>
+                        <button data-tab="historico" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
+                           <i class="fas fa-history mr-2"></i>Histórico
+                        </button>
+                        <button data-tab="compra" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
+                           <i class="fas fa-shopping-cart mr-2"></i>Solicitar Compra
+                        </button>
+                    </nav>
+                </div>
+            </div>
+
+            <!-- Tab Content: Solicitação -->
+            <div id="tab-content-solicitacao" class="form-section">
+                <form id="form-solicitacao" class="mt-6" novalidate>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         <div>
+                            <label for="data-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Data da Retirada</label>
+                            <input type="date" id="data-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" required>
+                        </div>
+                        <div>
+                            <label for="observacao" class="block text-sm font-medium text-gray-700 mb-1">Observações (Opcional)</label>
+                            <textarea id="observacao" rows="1" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" placeholder="Ex: Material para a aula de amanhã..."></textarea>
+                        </div>
+                    </div>
+                    <h3 class="font-semibold text-lg mb-3 text-gray-700 mt-8">Itens Desejados</h3>
+                    <div id="itens-list" class="space-y-4"></div>
+                    <div class="mt-8 text-center">
+                        <button type="submit" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full md:w-auto">
+                            <i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tab Content: Kits -->
+            <div id="tab-content-kits" class="form-section">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
+                    <div>
+                        <h3 class="font-semibold text-lg mb-3 text-gray-700">Kits Salvos</h3>
+                        <div id="kits-list" class="space-y-3 max-h-96 overflow-y-auto pr-2"></div>
+                        <p id="kits-placeholder" class="text-center py-4 text-gray-500">Nenhum kit salvo.</p>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-3 text-gray-700">Criar Novo Kit</h3>
+                        <form id="create-kit-form" class="bg-gray-50 p-4 rounded-lg" novalidate>
+                             <div class="mb-4">
+                                <label for="kit-name" class="block text-sm font-medium text-gray-700 mb-1">Nome do Kit</label>
+                                <input type="text" id="kit-name" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Ex: Kit Aula de Artes" required>
+                             </div>
+                             <label class="block text-sm font-medium text-gray-700 mb-1">Itens do Kit</label>
+                             <div id="kit-itens-list" class="space-y-3"></div>
+                             <button type="submit" class="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg">Salvar Kit</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Histórico -->
+            <div id="tab-content-historico" class="form-section">
+                <div class="bg-white pt-6 rounded-lg">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Histórico de Solicitações</h2>
+                    <div id="history-list" class="space-y-4 max-h-[60vh] overflow-y-auto pr-2"></div>
+                    <p id="history-placeholder" class="text-center py-8 text-gray-500">Nenhuma solicitação encontrada.</p>
+                </div>
+            </div>
+
+            <!-- Tab Content: Solicitar Compra -->
+            <div id="tab-content-compra" class="form-section">
+                <div class="bg-white pt-6 rounded-lg">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Solicitar Compra de Material</h2>
+                    <p class="text-sm text-gray-500 mb-6">Use este formulário para pedir a compra de itens que não estão disponíveis no almoxarifado.</p>
+                    <form id="form-compra" class="space-y-4">
+                        <div>
+                            <label for="compra-item-nome" class="block text-sm font-medium text-gray-700">Nome do Item</label>
+                            <input type="text" id="compra-item-nome" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Ex: Tinta Guache Azul Royal 250ml" required>
+                        </div>
+                        <div>
+                            <label for="compra-item-descricao" class="block text-sm font-medium text-gray-700">Descrição</label>
+                            <textarea id="compra-item-descricao" rows="3" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Forneça detalhes como marca, modelo, cor ou outras especificações importantes." required></textarea>
+                        </div>
+                        <div>
+                            <label for="compra-item-link" class="block text-sm font-medium text-gray-700">Link de Referência (Opcional)</label>
+                            <input type="url" id="compra-item-link" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="https://www.exemplo.com.br/produto">
+                        </div>
+                        <div>
+                            <label for="compra-item-quantidade" class="block text-sm font-medium text-gray-700">Quantidade Desejada</label>
+                            <input type="number" id="compra-item-quantidade" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Ex: 10" min="1" required>
+                        </div>
+                        <div class="text-center pt-4">
+                            <button type="submit" id="submit-compra-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full md:w-auto">
+                                <i class="fas fa-paper-plane mr-2"></i>Enviar Pedido de Compra
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="status-update-modal" class="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 hidden modal-enter">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center">
+            <div id="status-update-icon-container" class="mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-5"></div>
+            <h3 id="status-update-title" class="text-2xl font-bold text-gray-800">Atualização de Pedido</h3>
+            <p id="status-update-message" class="my-4 text-gray-600"></p>
+            <button id="status-update-ok-btn" class="w-full text-white font-bold py-3 px-6 rounded-lg">OK</button>
+        </div>
+    </div>
+
+    <div id="success-modal" class="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 hidden modal-enter">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-5">
+                <i class="fas fa-check text-4xl text-green-600"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-800">Operação Realizada!</h3>
+            <p id="success-message" class="my-4 text-gray-600"></p>
+            <button id="success-ok-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">OK</button>
+        </div>
+    </div>
+
+    <div id="item-selection-modal" class="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 hidden modal-enter">
+        <div class="bg-gray-50 rounded-lg shadow-2xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Selecione um Item</h3>
+                <button id="close-modal-btn" class="text-gray-500 hover:text-red-600 text-2xl">&times;</button>
+            </div>
+            <div class="relative mb-4">
+                <input type="text" id="item-search-input" placeholder="Buscar item..." class="w-full p-2 pl-10 border border-gray-300 rounded-md">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+            <div id="modal-items-container" class="space-y-2 overflow-y-auto pr-2"></div>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 hidden modal-enter">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100 mb-5">
+                <i class="fas fa-exclamation-triangle text-4xl text-yellow-600"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-800">Confirmar Ação</h3>
+            <p id="confirm-message" class="my-4 text-gray-600"></p>
+            <div class="flex justify-center gap-4 mt-6">
+                <button id="confirm-cancel-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">Cancelar</button>
+                <button id="confirm-ok-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCiSA3hcGqJ4BKtkxNrS9DBrEP4NcpxAVo",
+            authDomain: "almoxeprojects.firebaseapp.com",
+            projectId: "almoxeprojects",
+            storageBucket: "almoxeprojects.appspot.com",
+            messagingSenderId: "933670924253",
+            appId: "1:933670924253:web:64f137671adeab3f201034",
+            measurementId: "G-WDEKYB0Y20"
+        };
+        const appId = 'almoxarifado-app-global';
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const getCollectionRef = (name) => collection(db, 'almoxarifado', appId, name);
+
+        // State variables
+        const professorData = new Map();
+        let localItems = []; 
+        let localSolicitacoes = [];
+        let localSolicitacoesCompra = [];
+        let previousSolicitacoesState = new Map();
+        let previousCompraState = new Map();
+        let categorizedItems = {};
+        let currentProfessor = null;
+        let activeItemRow = null;
+        let unsubscribeItems = null;
+        let unsubscribeSolicitacoes = null;
+        let unsubscribeSolicitacoesCompra = null;
+
+        // DOM Elements
+        const matriculaInput = document.getElementById('solicitante-matricula');
+        const form = document.getElementById('form-solicitacao');
+        const tabsContainer = document.querySelector('.tabs-container');
+        const professorInfoDiv = document.getElementById('professor-info');
+        const professorNameDisplay = document.getElementById('professor-name-display');
+        const matriculaError = document.getElementById('matricula-error');
+        const matriculaFeedbackIcon = document.getElementById('matricula-feedback-icon');
+        const acessarBtn = document.getElementById('acessar-btn');
+        const trocarUsuarioBtn = document.getElementById('trocar-usuario-btn');
+        const dataAgendamentoInput = document.getElementById('data-agendamento');
+
+        // Modals
+        const itemModal = document.getElementById('item-selection-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const modalItemsContainer = document.getElementById('modal-items-container');
+        const itemSearchInput = document.getElementById('item-search-input');
+        const successModal = document.getElementById('success-modal');
+        const confirmModal = document.getElementById('confirm-modal');
+        const statusUpdateModal = document.getElementById('status-update-modal');
+
+        async function loadStaticData() {
+            professorData.clear();
+            const profsSnapshot = await getDocs(getCollectionRef('professores'));
+            profsSnapshot.forEach(doc => {
+                const prof = { id: doc.id, ...doc.data() };
+                professorData.set(prof.matricula, prof);
+            });
+        }
+
+        function attachRealtimeListeners() {
+            if (unsubscribeItems) unsubscribeItems(); 
+            if (unsubscribeSolicitacoes) unsubscribeSolicitacoes();
+            if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
+
+            unsubscribeItems = onSnapshot(getCollectionRef('itens'), (snapshot) => {
+                localItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }, (error) => console.error("Erro ao ouvir itens:", error));
+
+            unsubscribeSolicitacoes = onSnapshot(getCollectionRef('solicitacoes'), (snapshot) => {
+                const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                if (currentProfessor) {
+                    newSolicitacoes.forEach(sol => {
+                        if (sol.solicitanteId === currentProfessor.id) {
+                            const oldStatus = previousSolicitacoesState.get(sol.id);
+                            if (oldStatus && oldStatus !== sol.status) {
+                                if (oldStatus === 'Pendente' && sol.status === 'Concluída') {
+                                    showStatusUpdateModal(`Seu pedido para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi aceito e está sendo separado!`, 'success');
+                                } else if (oldStatus === 'Pendente' && sol.status === 'Rejeitada') {
+                                    showStatusUpdateModal(`Sua solicitação para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi recusada.`, 'error');
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                previousSolicitacoesState.clear();
+                newSolicitacoes.forEach(sol => previousSolicitacoesState.set(sol.id, sol.status));
+                localSolicitacoes = newSolicitacoes;
+                if (currentProfessor) displayHistory(currentProfessor.id);
+            }, (error) => console.error("Erro ao ouvir solicitações:", error));
+
+            unsubscribeSolicitacoesCompra = onSnapshot(getCollectionRef('solicitacoes_compra'), (snapshot) => {
+                const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                if (currentProfessor) {
+                    newSolicitacoes.forEach(sol => {
+                        if (sol.solicitanteId === currentProfessor.id) {
+                            const oldStatus = previousCompraState.get(sol.id);
+                            if (oldStatus && oldStatus !== sol.status) {
+                                //-- ALTERADO: Notifica sobre aprovação/rejeição do supervisor --//
+                                if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Aprovado') {
+                                    showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi APROVADO pelo supervisor!`, 'success');
+                                } else if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Rejeitado') {
+                                    showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi REJEITADO pelo supervisor.`, 'error');
+                                }
+                            }
+                        }
+                    });
+                }
+
+                previousCompraState.clear();
+                newSolicitacoes.forEach(sol => previousCompraState.set(sol.id, sol.status));
+                localSolicitacoesCompra = newSolicitacoes;
+                if (currentProfessor) displayHistory(currentProfessor.id);
+            }, (error) => console.error("Erro ao ouvir solicitações de compra:", error));
+        }
+
+        function getAvailableStock(item, targetDateStr) {
+            const currentPhysicalStock = item.quantity || 0;
+            let reservationsUpToDate = 0;
+            const pendingSolicitations = localSolicitacoes.filter(sol => sol.status === 'Pendente');
+            
+            for (const sol of pendingSolicitations) {
+                if (sol.dataAgendamento && sol.dataAgendamento <= targetDateStr) {
+                    for (const solItem of sol.itensSolicitados) {
+                        if (solItem.itemId === item.id) {
+                            reservationsUpToDate += solItem.quantidade;
+                        }
+                    }
+                }
+            }
+            return currentPhysicalStock - reservationsUpToDate;
+        }
+
+        function handleStockValidation(rowDiv) {
+            const itemId = rowDiv.dataset.itemId;
+            if (!itemId) return;
+
+            const item = localItems.find(i => i.id === itemId);
+            if (!item) return;
+            
+            const targetDate = dataAgendamentoInput.value;
+            const availableStock = getAvailableStock(item, targetDate);
+
+            const quantityInput = rowDiv.querySelector('.item-quantity-input');
+            const errorP = rowDiv.querySelector('.error-message');
+            const requestedQuantity = parseInt(quantityInput.value, 10);
+
+            if (requestedQuantity > availableStock) {
+                errorP.textContent = `Disponível para data: ${availableStock}`;
+                errorP.classList.remove('hidden');
+                quantityInput.classList.add('border-red-500');
+            } else {
+                errorP.classList.add('hidden');
+                quantityInput.classList.remove('border-red-500');
+            }
+        }
+
+        function createItemRow(containerId, itemData = null) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = 'item-row flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-white rounded-lg border';
+            
+            const itemName = itemData ? itemData.itemName : 'Clique para selecionar um item...';
+            const itemQuantity = itemData ? itemData.quantidade : '';
+            if (itemData?.itemId) {
+                div.dataset.itemId = itemData.itemId;
+            }
+
+            div.innerHTML = `
+                <div class="flex-grow">
+                    <button type="button" class="item-select-btn w-full p-2 border border-gray-300 rounded-md text-left ${itemData ? 'text-gray-800' : 'text-gray-400'}">
+                        ${itemName}
+                    </button>
+                    <p class="error-message text-red-600 text-xs font-semibold mt-1 ml-1 hidden"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="number" class="item-quantity-input w-24 p-2 border-gray-300 rounded-md" placeholder="Qtd" min="1" value="${itemQuantity}">
+                    <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 text-lg p-2" title="Remover Item">
+                        <i class="fas fa-minus-circle"></i>
+                    </button>
+                </div>
+            `;
+            container.appendChild(div);
+            
+            div.querySelector('.item-quantity-input').addEventListener('input', () => handleStockValidation(div));
+            div.querySelector('.item-select-btn').addEventListener('click', () => {
+                activeItemRow = div;
+                openItemModal();
+            });
+
+            if(itemData) handleStockValidation(div);
+        }
+
+        async function openItemModal() {
+            modalItemsContainer.innerHTML = '';
+            categorizedItems = {}; 
+            const targetDate = dataAgendamentoInput.value;
+
+            const categoriesMap = new Map();
+            try {
+                const categoriesSnapshot = await getDocs(getCollectionRef('categories'));
+                categoriesSnapshot.forEach(doc => {
+                    categoriesMap.set(doc.id, doc.data().name);
+                });
+            } catch (error) {
+                console.error("Erro ao carregar categorias no modal:", error);
+            }
+
+            localItems.forEach(item => {
+                const availableStock = getAvailableStock(item, targetDate);
+                if (availableStock > 0) {
+                    const categoryName = categoriesMap.get(item.categoryId) || 'Outros';
+                    if (!categorizedItems[categoryName]) {
+                        categorizedItems[categoryName] = [];
+                    }
+                    categorizedItems[categoryName].push({ ...item, availableStock });
+                }
+            });
+
+            const sortedCategories = Object.keys(categorizedItems).sort();
+            sortedCategories.forEach(category => {
+                const details = document.createElement('details');
+                details.className = 'category-accordion bg-white rounded-lg border';
+                details.innerHTML = `
+                    <summary class="flex justify-between items-center p-3 font-semibold text-gray-700 hover:bg-gray-100">
+                        <span>${category}</span>
+                        <i class="fas fa-chevron-right chevron"></i>
+                    </summary>
+                    <div class="items-grid p-3 border-t grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                `;
+                
+                const itemsGrid = details.querySelector('.items-grid');
+                categorizedItems[category].forEach(item => {
+                    const itemButton = document.createElement('button');
+                    itemButton.type = 'button';
+                    let lowStockClass = '';
+                    if (item.availableStock <= 10) {
+                        lowStockClass = 'low-stock-warning';
+                    }
+                    itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200 ${lowStockClass}`;
+                    itemButton.dataset.itemName = item.name;
+                    itemButton.innerHTML = `
+                        <span class="font-semibold text-gray-700">${item.name}</span>
+                        <div class="flex justify-between items-center">
+                            <span class="block text-xs text-gray-500">Disponível: ${item.availableStock}</span>
+                            ${lowStockClass ? '<i class="fas fa-exclamation-triangle text-yellow-500 text-xs ml-2"></i>' : ''}
+                        </div>
+                    `;
+                    itemButton.addEventListener('click', () => selectItemFromModal(item));
+                    itemsGrid.appendChild(itemButton);
+                });
+
+                modalItemsContainer.appendChild(details);
+            });
+
+            itemModal.classList.remove('hidden');
+            itemSearchInput.value = ''; 
+            itemSearchInput.focus();
+        }
+
+        function filterItems() {
+            const searchTerm = itemSearchInput.value.toLowerCase();
+            const categories = modalItemsContainer.querySelectorAll('.category-accordion');
+
+            categories.forEach(category => {
+                const categoryName = category.querySelector('summary span').textContent.toLowerCase();
+                const items = category.querySelectorAll('.item-button');
+                let hasVisibleItem = false;
+
+                items.forEach(item => {
+                    const itemName = item.dataset.itemName.toLowerCase();
+                    if (itemName.includes(searchTerm)) {
+                        item.style.display = 'block';
+                        hasVisibleItem = true;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+
+                if (hasVisibleItem || categoryName.includes(searchTerm)) {
+                    category.style.display = 'block';
+                    if (searchTerm) {
+                        category.open = true;
+                    }
+                } else {
+                    category.style.display = 'none';
+                }
+            });
+        }
+        
+        function selectItemFromModal(item) {
+            if (activeItemRow) {
+                const btn = activeItemRow.querySelector('.item-select-btn');
+                btn.textContent = item.name;
+                btn.classList.remove('text-gray-400');
+                activeItemRow.dataset.itemId = item.id;
+                handleStockValidation(activeItemRow);
+
+                const container = activeItemRow.parentElement;
+                const containerId = container.id;
+                const isLastRow = activeItemRow === container.lastElementChild;
+
+                if (isLastRow && (containerId === 'itens-list' || containerId === 'kit-itens-list')) {
+                    createItemRow(containerId);
+                }
+            }
+            closeItemModal();
+        }
+
+        function closeItemModal() {
+            itemModal.classList.add('hidden');
+            activeItemRow = null;
+        }
+
+        function displayHistory(professorId) {
+            const historyList = document.getElementById('history-list');
+            historyList.innerHTML = '';
+            
+            const professorSolicitations = localSolicitacoes
+                .filter(s => s.solicitanteId === professorId)
+                .map(s => ({ ...s, type: 'retirada' }));
+
+            const professorCompraSolicitations = localSolicitacoesCompra
+                .filter(s => s.solicitanteId === professorId)
+                .map(s => ({ ...s, type: 'compra' }));
+
+            const allHistory = [...professorSolicitations, ...professorCompraSolicitations];
+            allHistory.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+            
+            document.getElementById('history-placeholder').classList.toggle('hidden', allHistory.length > 0);
+            
+            allHistory.forEach(solicitacao => {
+                const div = document.createElement('div');
+                div.className = 'p-4 border rounded-lg bg-gray-50';
+                
+                if (solicitacao.type === 'retirada') {
+                    const statusClasses = { 'Pendente': 'bg-yellow-100 text-yellow-800', 'Concluída': 'bg-green-100 text-green-800', 'Rejeitada': 'bg-red-100 text-red-800', 'Cancelado': 'bg-gray-200 text-gray-700' };
+                    const dataAgendada = solicitacao.dataAgendamento ? new Date(solicitacao.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A';
+                    const dataPedido = solicitacao.timestamp ? solicitacao.timestamp.toDate().toLocaleDateString('pt-BR') : 'N/A';
+                    const actionButtons = [];
+                    if (solicitacao.status === 'Pendente') {
+                        actionButtons.push(`<button data-id="${solicitacao.id}" data-type="retirada" class="cancel-solicitacao-btn text-xs bg-red-100 text-red-700 hover:bg-red-200 font-semibold py-1 px-2 rounded">Cancelar</button>`);
+                    }
+                    actionButtons.push(`<button data-solicitacao-items='${JSON.stringify(solicitacao.itensSolicitados)}' class="reutilizar-btn text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-1 px-2 rounded">Reutilizar Pedido</button>`);
+
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-bold text-gray-700">Pedido de Material: ${dataPedido} <span class="font-normal text-gray-500">(Agendado para: ${dataAgendada})</span></p>
+                                <div class="text-xs text-gray-600 mt-2">
+                                    ${solicitacao.itensSolicitados.map(item => `<span>- ${item.quantidade}x ${item.itemName}</span>`).join('<br>')}
+                                </div>
+                            </div>
+                            <span class="text-xs font-bold px-2 py-1 rounded-full ${statusClasses[solicitacao.status] || ''}">${solicitacao.status}</span>
+                        </div>
+                        <div class="flex justify-end gap-2 mt-3">
+                            ${actionButtons.join('')}
+                        </div>`;
+                } else { 
+                    //-- ALTERADO: Exibe todos os status do novo fluxo de compra --//
+                    const statusClasses = { 
+                        'Pendente de Aprovação': 'bg-gray-200 text-gray-800',
+                        'Aprovado': 'bg-blue-100 text-blue-800',
+                        'Rejeitado': 'bg-red-100 text-red-800',
+                        'Em Análise': 'bg-yellow-100 text-yellow-800',
+                        'Comprado': 'bg-indigo-100 text-indigo-800',
+                        'Entregue': 'bg-green-100 text-green-800',
+                        'Cancelado': 'bg-gray-200 text-gray-700'
+                    };
+                    const dataPedido = solicitacao.timestamp ? solicitacao.timestamp.toDate().toLocaleDateString('pt-BR') : 'N/A';
+                    const cancelButton = solicitacao.status === 'Pendente de Aprovação' 
+                        ? `<button data-id="${solicitacao.id}" data-type="compra" class="cancel-solicitacao-btn ml-2 text-xs bg-red-100 text-red-700 hover:bg-red-200 font-semibold py-1 px-2 rounded">Cancelar</button>`
+                        : '';
+                    
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-bold text-gray-700">Pedido de Compra: ${dataPedido}</p>
+                                <div class="text-xs text-gray-600 mt-2">
+                                    <p><b>Item:</b> ${solicitacao.itemName} (Qtd: ${solicitacao.quantidade})</p>
+                                    <p><b>Descrição:</b> ${solicitacao.itemDescricao}</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs font-bold px-2 py-1 rounded-full ${statusClasses[solicitacao.status] || ''}">${solicitacao.status}</span>
+                                ${cancelButton}
+                            </div>
+                        </div>`;
+                }
+                historyList.appendChild(div);
+            });
+        }
+
+        function resetRequestForm() {
+            document.getElementById('observacao').value = '';
+            document.getElementById('itens-list').innerHTML = '';
+            const today = new Date().toISOString().split('T')[0];
+            dataAgendamentoInput.value = today;
+            dataAgendamentoInput.min = today;
+            createItemRow('itens-list');
+        }
+
+        function resetKitForm() {
+            document.getElementById('create-kit-form').reset();
+            document.getElementById('kit-itens-list').innerHTML = '';
+            createItemRow('kit-itens-list');
+        }
+
+        function showSuccessModal(message, callback) {
+            document.getElementById('success-message').textContent = message;
+            successModal.classList.remove('hidden');
+            const okBtn = document.getElementById('success-ok-btn');
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            newOkBtn.addEventListener('click', () => {
+                successModal.classList.add('hidden');
+                if (callback) callback();
+            });
+        }
+
+        function showConfirmModal(message, onConfirm) {
+            document.getElementById('confirm-message').textContent = message;
+            confirmModal.classList.remove('hidden');
+            const okBtn = document.getElementById('confirm-ok-btn');
+            const cancelBtn = document.getElementById('confirm-cancel-btn');
+            
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+
+            newOkBtn.onclick = () => {
+                confirmModal.classList.add('hidden');
+                onConfirm();
+            };
+            cancelBtn.onclick = () => confirmModal.classList.add('hidden');
+        }
+
+        function showStatusUpdateModal(message, type) {
+            const iconContainer = document.getElementById('status-update-icon-container');
+            const okBtn = document.getElementById('status-update-ok-btn');
+            
+            if (type === 'success') {
+                iconContainer.innerHTML = `<i class="fas fa-check-circle text-4xl text-green-600"></i>`;
+                iconContainer.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-5';
+                okBtn.className = 'w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg';
+            } else { // error
+                iconContainer.innerHTML = `<i class="fas fa-times-circle text-4xl text-red-600"></i>`;
+                iconContainer.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-5';
+                okBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg';
+            }
+            
+            document.getElementById('status-update-message').textContent = message;
+            statusUpdateModal.classList.remove('hidden');
+        }
+
+        async function renderKits() {
+            if (!currentProfessor) return;
+            const kitsList = document.getElementById('kits-list');
+            kitsList.innerHTML = '';
+            const q = query(getCollectionRef('kits'), where("professorId", "==", currentProfessor.id));
+            const querySnapshot = await getDocs(q);
+            document.getElementById('kits-placeholder').classList.toggle('hidden', !querySnapshot.empty);
+            querySnapshot.forEach(doc => {
+                const kit = { id: doc.id, ...doc.data() };
+                const div = document.createElement('div');
+                div.className = 'p-4 border rounded-lg bg-white';
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-bold text-gray-800">${kit.kitName}</p>
+                            <div class="text-xs text-gray-500 mt-1">
+                                ${kit.items.map(i => `<span>${i.quantidade}x ${i.itemName}</span>`).join('<br>')}
+                            </div>
+                        </div>
+                        <button data-id="${kit.id}" class="delete-kit-btn text-red-400 hover:text-red-600 ml-2 text-sm"><i class="fas fa-trash"></i></button>
+                    </div>
+                    <button data-kit-items='${JSON.stringify(kit.items)}' class="use-kit-btn mt-3 w-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-1 px-3 rounded text-sm">Usar este Kit</button>
+                `;
+                kitsList.appendChild(div);
+            });
+        }
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStaticData();
+            resetRequestForm();
+            createItemRow('kit-itens-list');
+        });
+
+        acessarBtn.addEventListener('click', () => {
+            const matricula = matriculaInput.value.trim();
+            const professor = professorData.get(matricula);
+            if (professor) {
+                currentProfessor = professor;
+                professorNameDisplay.textContent = professor.name;
+                professorInfoDiv.classList.remove('hidden');
+                tabsContainer.classList.add('active');
+                document.getElementById('tab-content-solicitacao').classList.add('active');
+                
+                acessarBtn.classList.add('hidden');
+                trocarUsuarioBtn.classList.remove('hidden');
+                matriculaInput.disabled = true;
+
+                attachRealtimeListeners(); 
+                renderKits();
+            } else {
+                matriculaError.textContent = 'Matrícula não encontrada.';
+                matriculaError.classList.remove('hidden');
+                matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-100 fas fa-times-circle text-red-500';
+            }
+        });
+
+        trocarUsuarioBtn.addEventListener('click', () => {
+            if (unsubscribeItems) unsubscribeItems(); 
+            if (unsubscribeSolicitacoes) unsubscribeSolicitacoes();
+            if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
+            location.reload();
+        });
+
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                const tab = button.dataset.tab;
+                document.querySelectorAll('.form-section').forEach(sec => sec.classList.remove('active'));
+                document.getElementById(`tab-content-${tab}`).classList.add('active');
+            });
+        });
+
+        function addRemoveListener(containerId) {
+            document.getElementById(containerId).addEventListener('click', e => {
+                const removeBtn = e.target.closest('.remove-item-btn');
+                const container = document.getElementById(containerId);
+                if (removeBtn && container.children.length > 1) {
+                    removeBtn.closest('.item-row').remove();
+                }
+            });
+        }
+        addRemoveListener('itens-list');
+        addRemoveListener('kit-itens-list');
+
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            if (!currentProfessor) return;
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Enviando...';
+
+            const dataAgendamento = dataAgendamentoInput.value;
+            const itensSolicitados = [];
+            let stockError = false;
+
+            for (const row of document.querySelectorAll('#itens-list .item-row')) {
+                const itemId = row.dataset.itemId;
+                const quantity = parseInt(row.querySelector('.item-quantity-input').value, 10);
+
+                if (!itemId || !quantity || quantity <= 0) continue;
+                
+                handleStockValidation(row);
+                if (!row.querySelector('.error-message').classList.contains('hidden')) stockError = true;
+                
+                itensSolicitados.push({ 
+                    itemId, 
+                    itemName: row.querySelector('.item-select-btn').textContent.trim(), 
+                    quantidade: quantity 
+                });
+            }
+
+            if (stockError) {
+                alert('Corrija os itens com quantidade acima do estoque disponível para a data selecionada.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
+                return;
+            }
+
+            if (itensSolicitados.length === 0) {
+                alert('Adicione pelo menos um item válido à solicitação.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
+                return;
+            }
+
+            try {
+                await addDoc(getCollectionRef('solicitacoes'), {
+                    solicitanteId: currentProfessor.id,
+                    solicitanteName: currentProfessor.name,
+                    itensSolicitados,
+                    dataAgendamento,
+                    observacao: document.getElementById('observacao').value.trim(),
+                    status: 'Pendente',
+                    timestamp: serverTimestamp()
+                });
+
+                showSuccessModal('Sua solicitação foi enviada com sucesso!', () => {
+                    resetRequestForm();
+                });
+            } catch (error) {
+                console.error("Erro ao enviar solicitação:", error);
+                alert("Ocorreu um erro ao enviar a solicitação. Tente novamente.");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
+            }
+        });
+
+        document.getElementById('create-kit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const kitName = document.getElementById('kit-name').value.trim();
+            if (!kitName) { alert('Por favor, dê um nome ao seu kit.'); return; }
+
+            const items = [];
+            for (const row of document.querySelectorAll('#kit-itens-list .item-row')) {
+                const itemId = row.dataset.itemId;
+                const quantity = parseInt(row.querySelector('.item-quantity-input').value, 10);
+
+                if (!itemId || !quantity || quantity <= 0) continue;
+                
+                items.push({ 
+                    itemId, 
+                    itemName: row.querySelector('.item-select-btn').textContent.trim(), 
+                    quantidade: quantity 
+                });
+            }
+
+            if (items.length === 0) {
+                alert('Adicione pelo menos um item válido ao kit.');
+                return;
+            }
+
+            try {
+                await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName, items });
+                resetKitForm();
+                renderKits();
+                showSuccessModal('Seu kit foi salvo com sucesso!');
+            } catch (err) {
+                console.error("Erro ao salvar kit:", err);
+            }
+        });
+
+        document.getElementById('kits-list').addEventListener('click', (e) => {
+            const useBtn = e.target.closest('.use-kit-btn');
+            const deleteBtn = e.target.closest('.delete-kit-btn');
+
+            if (useBtn) {
+                const items = JSON.parse(useBtn.dataset.kitItems);
+                const itemListContainer = document.getElementById('itens-list');
+                itemListContainer.innerHTML = '';
+                items.forEach(item => createItemRow('itens-list', item));
+                createItemRow('itens-list'); 
+                document.querySelector('.tab-button[data-tab="solicitacao"]').click();
+            }
+
+            if (deleteBtn) {
+                const kitId = deleteBtn.dataset.id;
+                showConfirmModal('Tem certeza que deseja excluir este kit?', () => {
+                    deleteDoc(doc(db, 'almoxarifado', appId, 'kits', kitId)).then(() => {
+                        renderKits();
+                        showSuccessModal('Kit excluído com sucesso.');
+                    }).catch(err => console.error("Erro ao excluir kit:", err));
+                });
+            }
+        });
+        
+        document.getElementById('tab-content-historico').addEventListener('click', (e) => {
+            const cancelBtn = e.target.closest('.cancel-solicitacao-btn');
+            const reutilizarBtn = e.target.closest('.reutilizar-btn');
+
+            if (cancelBtn) {
+                const solicitacaoId = cancelBtn.dataset.id;
+                const type = cancelBtn.dataset.type; // 'retirada' ou 'compra'
+                const collectionName = type === 'retirada' ? 'solicitacoes' : 'solicitacoes_compra';
+                
+                showConfirmModal('Tem certeza que deseja cancelar esta solicitação?', async () => {
+                    try {
+                        await updateDoc(doc(db, 'almoxarifado', appId, collectionName, solicitacaoId), {
+                            status: 'Cancelado'
+                        });
+                        showSuccessModal('Sua solicitação foi cancelada.');
+                    } catch (error) {
+                        console.error("Erro ao cancelar solicitação:", error);
+                        alert("Não foi possível cancelar a solicitação.");
+                    }
+                });
+            }
+
+            if (reutilizarBtn) {
+                const items = JSON.parse(reutilizarBtn.dataset.solicitacaoItems);
+                const itemListContainer = document.getElementById('itens-list');
+                itemListContainer.innerHTML = '';
+                items.forEach(item => createItemRow('itens-list', item));
+                createItemRow('itens-list');
+                
+                const today = new Date().toISOString().split('T')[0];
+                dataAgendamentoInput.value = today;
+                
+                document.querySelector('.tab-button[data-tab="solicitacao"]').click();
+            }
+        });
+
+        document.getElementById('form-compra').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentProfessor) {
+                alert("Você precisa estar logado para solicitar uma compra.");
+                return;
+            }
+
+            const itemName = document.getElementById('compra-item-nome').value.trim();
+            const itemDesc = document.getElementById('compra-item-descricao').value.trim();
+            const itemLink = document.getElementById('compra-item-link').value.trim();
+            const quantidade = parseInt(document.getElementById('compra-item-quantidade').value, 10);
+
+            if (!itemName || !itemDesc || !quantidade) {
+                alert("Por favor, preencha todos os campos obrigatórios.");
+                return;
+            }
+
+            try {
+                //-- ALTERAÇÃO CRÍTICA: Mudar o status para o fluxo de aprovação --//
+                await addDoc(getCollectionRef('solicitacoes_compra'), {
+                    solicitanteId: currentProfessor.id,
+                    solicitanteName: currentProfessor.name,
+                    itemName,
+                    itemDescricao: itemDesc,
+                    itemLink,
+                    quantidade,
+                    status: 'Pendente de Aprovação', // <-- CORREÇÃO APLICADA AQUI
+                    timestamp: serverTimestamp()
+                });
+                showSuccessModal('Sua solicitação de compra foi enviada para aprovação!');
+                e.target.reset();
+            } catch (error) {
+                console.error("Erro ao enviar solicitação de compra:", error);
+                alert("Ocorreu um erro ao enviar seu pedido.");
+            }
+        });
+
+        // Listeners do Modal
+        closeModalBtn.addEventListener('click', closeItemModal);
+        itemModal.addEventListener('click', (e) => {
+            if (e.target === itemModal) closeItemModal();
+        });
+        itemSearchInput.addEventListener('input', filterItems);
+        document.getElementById('status-update-ok-btn').addEventListener('click', () => {
+            statusUpdateModal.classList.add('hidden');
+        });
+
+    </script>
+</body>
+</html>
