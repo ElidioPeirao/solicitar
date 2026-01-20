@@ -29,10 +29,7 @@
         details > summary::-webkit-details-marker { display: none; }
         details > summary .chevron { transition: transform 0.2s; }
         details[open] > summary .chevron { transform: rotate(90deg); }
-        .low-stock-warning {
-            background-color: #fef9c3 !important;
-            border-left: 4px solid #f59e0b;
-        }
+       
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
@@ -461,17 +458,17 @@
                 categorizedItems[category].forEach(item => {
                     const itemButton = document.createElement('button');
                     itemButton.type = 'button';
-                    let lowStockClass = '';
-                    if (item.availableStock <= 10) {
-                        lowStockClass = 'low-stock-warning';
-                    }
-                    itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200 ${lowStockClass}`;
+                    
+                    // --- ALTERAÇÃO AQUI: Removida a lógica de lowStockClass ---
+                    
+                    itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
                     itemButton.dataset.itemName = item.name;
+                    
+                    // --- ALTERAÇÃO AQUI: Removido o ícone de alerta do innerHTML ---
                     itemButton.innerHTML = `
                         <span class="font-semibold text-gray-700">${item.name}</span>
                         <div class="flex justify-between items-center">
                             <span class="block text-xs text-gray-500">Disponível: ${item.availableStock}</span>
-                            ${lowStockClass ? '<i class="fas fa-exclamation-triangle text-yellow-500 text-xs ml-2"></i>' : ''}
                         </div>
                     `;
                     itemButton.addEventListener('click', () => selectItemFromModal(item));
