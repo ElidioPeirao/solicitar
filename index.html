@@ -29,10 +29,16 @@
         details > summary::-webkit-details-marker { display: none; }
         details > summary .chevron { transition: transform 0.2s; }
         details[open] > summary .chevron { transform: rotate(90deg); }
-       
+        
+        /* Estilo para o Monitor */
+        #firebase-monitor {
+            font-family: 'Courier New', Courier, monospace;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 pb-20">
 
     <div class="container mx-auto max-w-4xl w-full">
         <!-- Main Container -->
@@ -134,36 +140,42 @@
                 </div>
             </div>
 
-            <!-- Tab Content: Solicitar Compra -->
+            <!-- Tab Content: Solicitar Compra (EM DESENVOLVIMENTO) -->
             <div id="tab-content-compra" class="form-section">
-                <div class="bg-white pt-6 rounded-lg">
-                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Solicitar Compra de Material</h2>
-                    <p class="text-sm text-gray-500 mb-6">Use este formulário para pedir a compra de itens que não estão disponíveis no almoxarifado.</p>
-                    <form id="form-compra" class="space-y-4">
-                        <div>
-                            <label for="compra-item-nome" class="block text-sm font-medium text-gray-700">Nome do Item</label>
-                            <input type="text" id="compra-item-nome" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Ex: Tinta Guache Azul Royal 250ml" required>
-                        </div>
-                        <div>
-                            <label for="compra-item-descricao" class="block text-sm font-medium text-gray-700">Descrição</label>
-                            <textarea id="compra-item-descricao" rows="3" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Forneça detalhes como marca, modelo, cor ou outras especificações importantes." required></textarea>
-                        </div>
-                        <div>
-                            <label for="compra-item-link" class="block text-sm font-medium text-gray-700">Link de Referência (Opcional)</label>
-                            <input type="url" id="compra-item-link" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="https://www.exemplo.com.br/produto">
-                        </div>
-                        <div>
-                            <label for="compra-item-quantidade" class="block text-sm font-medium text-gray-700">Quantidade Desejada</label>
-                            <input type="number" id="compra-item-quantidade" class="mt-1 p-3 w-full border border-gray-300 rounded-md shadow-sm" placeholder="Ex: 10" min="1" required>
-                        </div>
-                        <div class="text-center pt-4">
-                            <button type="submit" id="submit-compra-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full md:w-auto">
-                                <i class="fas fa-paper-plane mr-2"></i>Enviar Pedido de Compra
-                            </button>
-                        </div>
-                    </form>
+                <div class="flex flex-col items-center justify-center bg-white pt-10 pb-10 rounded-lg min-h-[300px]">
+                    <div class="bg-blue-50 p-6 rounded-full mb-6">
+                        <i class="fas fa-hammer text-6xl text-blue-400"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-700 mb-2">Em Desenvolvimento</h2>
+                    <p class="text-gray-500 text-center max-w-md px-4">
+                        O módulo de solicitação de compras externas está sendo aprimorado para melhor atendê-lo.
+                    </p>
+                    <span class="mt-4 px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-mono border border-gray-200">
+                        Status: Construção
+                    </span>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Monitor de Recursos Firebase (OCULTO) -->
+    <div id="firebase-monitor" class="hidden fixed bottom-4 right-4 bg-gray-900 text-white p-4 rounded-lg shadow-2xl z-50 text-xs opacity-90 hover:opacity-100 transition-opacity">
+        <div class="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
+            <span class="font-bold text-green-400"><i class="fas fa-server mr-2"></i>Monitor Firebase</span>
+            <button onclick="document.getElementById('firebase-monitor').style.display='none'" class="text-gray-500 hover:text-white ml-4">&times;</button>
+        </div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+            <div>Leituras (Reads):</div>
+            <div id="monitor-reads" class="text-right font-bold text-blue-400">0</div>
+            
+            <div>Gravações (Writes):</div>
+            <div id="monitor-writes" class="text-right font-bold text-yellow-400">0</div>
+            
+            <div>Exclusões (Deletes):</div>
+            <div id="monitor-deletes" class="text-right font-bold text-red-400">0</div>
+        </div>
+        <div class="mt-2 text-[10px] text-gray-500 text-center">
+            *Estimativa de custo desta sessão
         </div>
     </div>
 
@@ -221,6 +233,37 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- MONITOR DE RECURSOS FIREBASE ---
+        let sessionReads = 0;
+        let sessionWrites = 0;
+        let sessionDeletes = 0;
+
+        function updateMonitorUI() {
+            document.getElementById('monitor-reads').textContent = sessionReads;
+            document.getElementById('monitor-writes').textContent = sessionWrites;
+            document.getElementById('monitor-deletes').textContent = sessionDeletes;
+            
+            // Efeito visual ao atualizar (removido para manter oculto o comportamento)
+        }
+
+        function countRead(qtd = 1) {
+            if (qtd > 0) {
+                sessionReads += qtd;
+                updateMonitorUI();
+            }
+        }
+
+        function countWrite(qtd = 1) {
+            sessionWrites += qtd;
+            updateMonitorUI();
+        }
+
+        function countDelete(qtd = 1) {
+            sessionDeletes += qtd;
+            updateMonitorUI();
+        }
+        // ------------------------------------
+
         const firebaseConfig = {
             apiKey: "AIzaSyCiSA3hcGqJ4BKtkxNrS9DBrEP4NcpxAVo",
             authDomain: "almoxeprojects.firebaseapp.com",
@@ -237,17 +280,20 @@
         const getCollectionRef = (name) => collection(db, 'almoxarifado', appId, name);
 
         // State variables
-        const professorData = new Map();
         let localItems = []; 
-        let localSolicitacoes = [];
+        let globalPendingSolicitacoes = []; 
+        let myPersonalSolicitacoes = []; 
         let localSolicitacoesCompra = [];
         let previousSolicitacoesState = new Map();
         let previousCompraState = new Map();
         let categorizedItems = {};
+        let categoriesCache = null; 
+        
         let currentProfessor = null;
         let activeItemRow = null;
         let unsubscribeItems = null;
-        let unsubscribeSolicitacoes = null;
+        let unsubscribePending = null;
+        let unsubscribeMyHistory = null;
         let unsubscribeSolicitacoesCompra = null;
 
         // DOM Elements
@@ -271,80 +317,76 @@
         const confirmModal = document.getElementById('confirm-modal');
         const statusUpdateModal = document.getElementById('status-update-modal');
 
-        async function loadStaticData() {
-            professorData.clear();
-            const profsSnapshot = await getDocs(getCollectionRef('professores'));
-            profsSnapshot.forEach(doc => {
-                const prof = { id: doc.id, ...doc.data() };
-                professorData.set(prof.matricula, prof);
-            });
-        }
-
         function attachRealtimeListeners() {
             if (unsubscribeItems) unsubscribeItems(); 
-            if (unsubscribeSolicitacoes) unsubscribeSolicitacoes();
+            if (unsubscribePending) unsubscribePending();
+            if (unsubscribeMyHistory) unsubscribeMyHistory();
             if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
 
             unsubscribeItems = onSnapshot(getCollectionRef('itens'), (snapshot) => {
+                countRead(snapshot.docChanges().length);
                 localItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             }, (error) => console.error("Erro ao ouvir itens:", error));
 
-            unsubscribeSolicitacoes = onSnapshot(getCollectionRef('solicitacoes'), (snapshot) => {
+            const qPending = query(getCollectionRef('solicitacoes'), where("status", "==", "Pendente"));
+            unsubscribePending = onSnapshot(qPending, (snapshot) => {
+                countRead(snapshot.docChanges().length);
+                globalPendingSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            }, (error) => console.error("Erro ao ouvir pendentes:", error));
+
+            const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
+            unsubscribeMyHistory = onSnapshot(qMyHistory, (snapshot) => {
+                countRead(snapshot.docChanges().length);
                 const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
-                if (currentProfessor) {
-                    newSolicitacoes.forEach(sol => {
-                        if (sol.solicitanteId === currentProfessor.id) {
-                            const oldStatus = previousSolicitacoesState.get(sol.id);
-                            if (oldStatus && oldStatus !== sol.status) {
-                                if (oldStatus === 'Pendente' && sol.status === 'Concluída') {
-                                    showStatusUpdateModal(`Seu pedido para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi aceito e está sendo separado!`, 'success');
-                                } else if (oldStatus === 'Pendente' && sol.status === 'Rejeitada') {
-                                    showStatusUpdateModal(`Sua solicitação para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi recusada.`, 'error');
-                                }
-                            }
+                newSolicitacoes.forEach(sol => {
+                    const oldStatus = previousSolicitacoesState.get(sol.id);
+                    if (oldStatus && oldStatus !== sol.status) {
+                        if (oldStatus === 'Pendente' && sol.status === 'Concluída') {
+                            showStatusUpdateModal(`Seu pedido para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi aceito e está sendo separado!`, 'success');
+                        } else if (oldStatus === 'Pendente' && sol.status === 'Rejeitada') {
+                            showStatusUpdateModal(`Sua solicitação para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi recusada.`, 'error');
                         }
-                    });
-                }
+                    }
+                });
                 
                 previousSolicitacoesState.clear();
                 newSolicitacoes.forEach(sol => previousSolicitacoesState.set(sol.id, sol.status));
-                localSolicitacoes = newSolicitacoes;
-                if (currentProfessor) displayHistory(currentProfessor.id);
-            }, (error) => console.error("Erro ao ouvir solicitações:", error));
+                
+                myPersonalSolicitacoes = newSolicitacoes;
+                displayHistory();
+            }, (error) => console.error("Erro ao ouvir histórico:", error));
 
-            unsubscribeSolicitacoesCompra = onSnapshot(getCollectionRef('solicitacoes_compra'), (snapshot) => {
+
+            // Listener de Compras mantido apenas para o HISTÓRICO, o formulário de envio está desativado
+            const qCompras = query(getCollectionRef('solicitacoes_compra'), where("solicitanteId", "==", currentProfessor.id));
+            unsubscribeSolicitacoesCompra = onSnapshot(qCompras, (snapshot) => {
+                countRead(snapshot.docChanges().length);
                 const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                if (currentProfessor) {
-                    newSolicitacoes.forEach(sol => {
-                        if (sol.solicitanteId === currentProfessor.id) {
-                            const oldStatus = previousCompraState.get(sol.id);
-                            if (oldStatus && oldStatus !== sol.status) {
-                                //-- ALTERADO: Notifica sobre aprovação/rejeição do supervisor --//
-                                if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Aprovado') {
-                                    showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi APROVADO pelo supervisor!`, 'success');
-                                } else if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Rejeitado') {
-                                    showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi REJEITADO pelo supervisor.`, 'error');
-                                }
-                            }
+                newSolicitacoes.forEach(sol => {
+                    const oldStatus = previousCompraState.get(sol.id);
+                    if (oldStatus && oldStatus !== sol.status) {
+                        if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Aprovado') {
+                            showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi APROVADO pelo supervisor!`, 'success');
+                        } else if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Rejeitado') {
+                            showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi REJEITADO pelo supervisor.`, 'error');
                         }
-                    });
-                }
+                    }
+                });
 
                 previousCompraState.clear();
                 newSolicitacoes.forEach(sol => previousCompraState.set(sol.id, sol.status));
                 localSolicitacoesCompra = newSolicitacoes;
-                if (currentProfessor) displayHistory(currentProfessor.id);
-            }, (error) => console.error("Erro ao ouvir solicitações de compra:", error));
+                displayHistory();
+            }, (error) => console.error("Erro ao ouvir compras:", error));
         }
 
         function getAvailableStock(item, targetDateStr) {
             const currentPhysicalStock = item.quantity || 0;
             let reservationsUpToDate = 0;
-            const pendingSolicitations = localSolicitacoes.filter(sol => sol.status === 'Pendente');
             
-            for (const sol of pendingSolicitations) {
+            for (const sol of globalPendingSolicitacoes) {
                 if (sol.dataAgendamento && sol.dataAgendamento <= targetDateStr) {
                     for (const solItem of sol.itensSolicitados) {
                         if (solItem.itemId === item.id) {
@@ -421,15 +463,19 @@
             categorizedItems = {}; 
             const targetDate = dataAgendamentoInput.value;
 
-            const categoriesMap = new Map();
-            try {
-                const categoriesSnapshot = await getDocs(getCollectionRef('categories'));
-                categoriesSnapshot.forEach(doc => {
-                    categoriesMap.set(doc.id, doc.data().name);
-                });
-            } catch (error) {
-                console.error("Erro ao carregar categorias no modal:", error);
+            if (!categoriesCache) {
+                categoriesCache = new Map();
+                try {
+                    const categoriesSnapshot = await getDocs(getCollectionRef('categories'));
+                    countRead(categoriesSnapshot.size);
+                    categoriesSnapshot.forEach(doc => {
+                        categoriesCache.set(doc.id, doc.data().name);
+                    });
+                } catch (error) {
+                    console.error("Erro ao carregar categorias no modal:", error);
+                }
             }
+            const categoriesMap = categoriesCache;
 
             localItems.forEach(item => {
                 const availableStock = getAvailableStock(item, targetDate);
@@ -459,12 +505,9 @@
                     const itemButton = document.createElement('button');
                     itemButton.type = 'button';
                     
-                    // --- ALTERAÇÃO AQUI: Removida a lógica de lowStockClass ---
-                    
                     itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
                     itemButton.dataset.itemName = item.name;
                     
-                    // --- ALTERAÇÃO AQUI: Removido o ícone de alerta do innerHTML ---
                     itemButton.innerHTML = `
                         <span class="font-semibold text-gray-700">${item.name}</span>
                         <div class="flex justify-between items-center">
@@ -537,17 +580,13 @@
             activeItemRow = null;
         }
 
-        function displayHistory(professorId) {
+        function displayHistory() {
+            if (!currentProfessor) return;
             const historyList = document.getElementById('history-list');
             historyList.innerHTML = '';
             
-            const professorSolicitations = localSolicitacoes
-                .filter(s => s.solicitanteId === professorId)
-                .map(s => ({ ...s, type: 'retirada' }));
-
-            const professorCompraSolicitations = localSolicitacoesCompra
-                .filter(s => s.solicitanteId === professorId)
-                .map(s => ({ ...s, type: 'compra' }));
+            const professorSolicitations = myPersonalSolicitacoes.map(s => ({ ...s, type: 'retirada' }));
+            const professorCompraSolicitations = localSolicitacoesCompra.map(s => ({ ...s, type: 'compra' }));
 
             const allHistory = [...professorSolicitations, ...professorCompraSolicitations];
             allHistory.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
@@ -582,7 +621,6 @@
                             ${actionButtons.join('')}
                         </div>`;
                 } else { 
-                    //-- ALTERADO: Exibe todos os status do novo fluxo de compra --//
                     const statusClasses = { 
                         'Pendente de Aprovação': 'bg-gray-200 text-gray-800',
                         'Aprovado': 'bg-blue-100 text-blue-800',
@@ -683,6 +721,10 @@
             kitsList.innerHTML = '';
             const q = query(getCollectionRef('kits'), where("professorId", "==", currentProfessor.id));
             const querySnapshot = await getDocs(q);
+            
+            // Monitor: Contagem de leitura dos Kits
+            countRead(querySnapshot.size);
+
             document.getElementById('kits-placeholder').classList.toggle('hidden', !querySnapshot.empty);
             querySnapshot.forEach(doc => {
                 const kit = { id: doc.id, ...doc.data() };
@@ -706,37 +748,59 @@
 
         // --- Event Listeners ---
         document.addEventListener('DOMContentLoaded', () => {
-            loadStaticData();
             resetRequestForm();
             createItemRow('kit-itens-list');
         });
 
-        acessarBtn.addEventListener('click', () => {
+        acessarBtn.addEventListener('click', async () => {
             const matricula = matriculaInput.value.trim();
-            const professor = professorData.get(matricula);
-            if (professor) {
-                currentProfessor = professor;
-                professorNameDisplay.textContent = professor.name;
-                professorInfoDiv.classList.remove('hidden');
-                tabsContainer.classList.add('active');
-                document.getElementById('tab-content-solicitacao').classList.add('active');
-                
-                acessarBtn.classList.add('hidden');
-                trocarUsuarioBtn.classList.remove('hidden');
-                matriculaInput.disabled = true;
+            if (!matricula) return;
 
-                attachRealtimeListeners(); 
-                renderKits();
-            } else {
-                matriculaError.textContent = 'Matrícula não encontrada.';
-                matriculaError.classList.remove('hidden');
-                matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-100 fas fa-times-circle text-red-500';
+            acessarBtn.disabled = true;
+            acessarBtn.textContent = '...';
+
+            // OTIMIZAÇÃO: Busca apenas o professor específico em vez de todos
+            const q = query(getCollectionRef('professores'), where("matricula", "==", matricula));
+            
+            try {
+                const querySnapshot = await getDocs(q);
+                countRead(querySnapshot.size); // Deve ser 1
+
+                if (!querySnapshot.empty) {
+                    const doc = querySnapshot.docs[0];
+                    const professor = { id: doc.id, ...doc.data() };
+                    
+                    currentProfessor = professor;
+                    professorNameDisplay.textContent = professor.name;
+                    professorInfoDiv.classList.remove('hidden');
+                    tabsContainer.classList.add('active');
+                    document.getElementById('tab-content-solicitacao').classList.add('active');
+                    
+                    acessarBtn.classList.add('hidden');
+                    trocarUsuarioBtn.classList.remove('hidden');
+                    matriculaInput.disabled = true;
+                    matriculaError.classList.add('hidden');
+                    matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-0';
+
+                    attachRealtimeListeners(); 
+                    renderKits();
+                } else {
+                    matriculaError.textContent = 'Matrícula não encontrada.';
+                    matriculaError.classList.remove('hidden');
+                    matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-100 fas fa-times-circle text-red-500';
+                }
+            } catch (error) {
+                console.error("Erro no login:", error);
+            } finally {
+                acessarBtn.disabled = false;
+                acessarBtn.textContent = 'Acessar';
             }
         });
 
         trocarUsuarioBtn.addEventListener('click', () => {
             if (unsubscribeItems) unsubscribeItems(); 
-            if (unsubscribeSolicitacoes) unsubscribeSolicitacoes();
+            if (unsubscribePending) unsubscribePending();
+            if (unsubscribeMyHistory) unsubscribeMyHistory();
             if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
             location.reload();
         });
@@ -815,6 +879,9 @@
                     status: 'Pendente',
                     timestamp: serverTimestamp()
                 });
+                
+                // Monitor: Contagem de gravação
+                countWrite(1);
 
                 showSuccessModal('Sua solicitação foi enviada com sucesso!', () => {
                     resetRequestForm();
@@ -854,6 +921,9 @@
 
             try {
                 await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName, items });
+                // Monitor: Contagem de gravação
+                countWrite(1);
+
                 resetKitForm();
                 renderKits();
                 showSuccessModal('Seu kit foi salvo com sucesso!');
@@ -879,6 +949,8 @@
                 const kitId = deleteBtn.dataset.id;
                 showConfirmModal('Tem certeza que deseja excluir este kit?', () => {
                     deleteDoc(doc(db, 'almoxarifado', appId, 'kits', kitId)).then(() => {
+                        // Monitor: Contagem de deleção
+                        countDelete(1);
                         renderKits();
                         showSuccessModal('Kit excluído com sucesso.');
                     }).catch(err => console.error("Erro ao excluir kit:", err));
@@ -892,7 +964,7 @@
 
             if (cancelBtn) {
                 const solicitacaoId = cancelBtn.dataset.id;
-                const type = cancelBtn.dataset.type; // 'retirada' ou 'compra'
+                const type = cancelBtn.dataset.type; 
                 const collectionName = type === 'retirada' ? 'solicitacoes' : 'solicitacoes_compra';
                 
                 showConfirmModal('Tem certeza que deseja cancelar esta solicitação?', async () => {
@@ -900,6 +972,9 @@
                         await updateDoc(doc(db, 'almoxarifado', appId, collectionName, solicitacaoId), {
                             status: 'Cancelado'
                         });
+                        // Monitor: Contagem de gravação (update conta como write)
+                        countWrite(1);
+
                         showSuccessModal('Sua solicitação foi cancelada.');
                     } catch (error) {
                         console.error("Erro ao cancelar solicitação:", error);
@@ -922,43 +997,8 @@
             }
         });
 
-        document.getElementById('form-compra').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!currentProfessor) {
-                alert("Você precisa estar logado para solicitar uma compra.");
-                return;
-            }
-
-            const itemName = document.getElementById('compra-item-nome').value.trim();
-            const itemDesc = document.getElementById('compra-item-descricao').value.trim();
-            const itemLink = document.getElementById('compra-item-link').value.trim();
-            const quantidade = parseInt(document.getElementById('compra-item-quantidade').value, 10);
-
-            if (!itemName || !itemDesc || !quantidade) {
-                alert("Por favor, preencha todos os campos obrigatórios.");
-                return;
-            }
-
-            try {
-                //-- ALTERAÇÃO CRÍTICA: Mudar o status para o fluxo de aprovação --//
-                await addDoc(getCollectionRef('solicitacoes_compra'), {
-                    solicitanteId: currentProfessor.id,
-                    solicitanteName: currentProfessor.name,
-                    itemName,
-                    itemDescricao: itemDesc,
-                    itemLink,
-                    quantidade,
-                    status: 'Pendente de Aprovação', // <-- CORREÇÃO APLICADA AQUI
-                    timestamp: serverTimestamp()
-                });
-                showSuccessModal('Sua solicitação de compra foi enviada para aprovação!');
-                e.target.reset();
-            } catch (error) {
-                console.error("Erro ao enviar solicitação de compra:", error);
-                alert("Ocorreu um erro ao enviar seu pedido.");
-            }
-        });
-
+        // Event listener do Formulário de Compra REMOVIDO para evitar erros, pois o formulário não existe mais no DOM.
+        
         // Listeners do Modal
         closeModalBtn.addEventListener('click', closeItemModal);
         itemModal.addEventListener('click', (e) => {
