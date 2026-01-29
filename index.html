@@ -384,18 +384,21 @@
 
         function getAvailableStock(item, targetDateStr) {
             const currentPhysicalStock = item.quantity || 0;
-            let reservationsUpToDate = 0;
+            let reservationsOnDate = 0;
             
+            // Usa APENAS a lista global de pendentes para calcular estoque
             for (const sol of globalPendingSolicitacoes) {
-                if (sol.dataAgendamento && sol.dataAgendamento <= targetDateStr) {
+                // CORREÇÃO: Verifica APENAS a data específica (===) em vez de acumular datas passadas (<=)
+                // Isso permite reservar o mesmo equipamento em dias diferentes
+                if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
                     for (const solItem of sol.itensSolicitados) {
                         if (solItem.itemId === item.id) {
-                            reservationsUpToDate += solItem.quantidade;
+                            reservationsOnDate += solItem.quantidade;
                         }
                     }
                 }
             }
-            return currentPhysicalStock - reservationsUpToDate;
+            return currentPhysicalStock - reservationsOnDate;
         }
 
         function handleStockValidation(rowDiv) {
