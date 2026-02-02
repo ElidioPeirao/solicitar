@@ -98,22 +98,46 @@
                             <label for="data-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Data da Retirada</label>
                             <div class="flex gap-2">
                                 <input type="date" id="data-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" required>
-                                <button type="button" id="add-date-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 rounded-md font-bold transition-colors" title="Adicionar Data com este Período">
+                                <button type="button" id="add-date-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 rounded-md font-bold transition-colors" title="Adicionar Data com os Períodos Selecionados">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
                             <!-- Container para datas selecionadas -->
                             <div id="selected-dates-container" class="flex flex-wrap gap-2 mt-2 min-h-[1.5rem]"></div>
                         </div>
-                        <div>
-                            <label for="periodo-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Período de Uso</label>
-                            <select id="periodo-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm bg-white" required>
-                                <option value="Manhã">Manhã</option>
-                                <option value="Tarde">Tarde</option>
-                                <option value="Noite">Noite</option>
-                                <option value="Integral">Integral (Dia Todo)</option>
-                            </select>
+                        
+                        <!-- Coluna Períodos (Dropdown Customizado) -->
+                        <div class="relative">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Períodos de Uso</label>
+                            <button type="button" id="periodo-dropdown-btn" class="w-full p-3 border border-gray-300 rounded-md shadow-sm bg-white text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <span id="periodo-selected-text" class="truncate text-gray-700">Manhã</span>
+                                <i class="fas fa-chevron-down text-gray-400 text-sm ml-2"></i>
+                            </button>
+                            
+                            <!-- Dropdown Content (Oculto inicialmente) -->
+                            <div id="periodo-dropdown-content" class="hidden absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-xl py-1">
+                                <div id="periodos-container" class="flex flex-col">
+                                    <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                                        <input type="checkbox" name="periodo" value="Manhã" class="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500" checked>
+                                        <span class="ml-3 text-sm text-gray-700">Manhã</span>
+                                    </label>
+                                    <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                                        <input type="checkbox" name="periodo" value="Tarde" class="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500">
+                                        <span class="ml-3 text-sm text-gray-700">Tarde</span>
+                                    </label>
+                                    <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                                        <input type="checkbox" name="periodo" value="Noite" class="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500">
+                                        <span class="ml-3 text-sm text-gray-700">Noite</span>
+                                    </label>
+                                    <div class="border-t border-gray-100 my-1"></div>
+                                    <label class="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer">
+                                        <input type="checkbox" name="periodo" value="Integral" class="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500">
+                                        <span class="ml-3 text-sm font-bold text-blue-800">Integral (Dia Todo)</span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
+
                         <div class="md:col-span-1 flex flex-col">
                             <label for="observacao" class="block text-sm font-medium text-gray-700 mb-1">Observações (Opcional)</label>
                             <!-- Área de texto gerada pelo sistema (Bloqueada) -->
@@ -125,7 +149,7 @@
                     
                     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-4 text-sm text-blue-700">
                         <i class="fas fa-info-circle mr-2"></i>
-                        Selecione a Data e o Período, depois clique no <b>+</b> para adicionar. O estoque será validado para todas as combinações no envio.
+                        Selecione a Data e os Períodos, depois clique no <b>+</b> para adicionar. O estoque será validado para todas as combinações no envio.
                     </div>
 
                     <h3 class="font-semibold text-lg mb-3 text-gray-700 mt-8">Itens Desejados</h3>
@@ -342,8 +366,13 @@
         const dataAgendamentoInput = document.getElementById('data-agendamento');
         const addDateBtn = document.getElementById('add-date-btn');
         const selectedDatesContainer = document.getElementById('selected-dates-container');
-        const periodoAgendamentoInput = document.getElementById('periodo-agendamento');
         const systemObsReadonly = document.getElementById('system-obs-readonly');
+        
+        // Custom Dropdown Elements
+        const periodoDropdownBtn = document.getElementById('periodo-dropdown-btn');
+        const periodoDropdownContent = document.getElementById('periodo-dropdown-content');
+        const periodoSelectedText = document.getElementById('periodo-selected-text');
+        const periodosContainer = document.getElementById('periodos-container');
 
         // Modals
         const itemModal = document.getElementById('item-selection-modal');
@@ -423,6 +452,76 @@
             }, (error) => console.error("Erro ao ouvir compras:", error));
         }
 
+        // --- Dropdown Logic ---
+        
+        function toggleDropdown() {
+            periodoDropdownContent.classList.toggle('hidden');
+            const icon = periodoDropdownBtn.querySelector('i');
+            if (periodoDropdownContent.classList.contains('hidden')) {
+                icon.classList.remove('rotate-180');
+            } else {
+                icon.classList.add('rotate-180');
+                icon.classList.add('transition-transform');
+            }
+        }
+
+        function closeDropdown() {
+            periodoDropdownContent.classList.add('hidden');
+            const icon = periodoDropdownBtn.querySelector('i');
+            icon.classList.remove('rotate-180');
+        }
+
+        periodoDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleDropdown();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!periodoDropdownContent.contains(e.target) && !periodoDropdownBtn.contains(e.target)) {
+                closeDropdown();
+            }
+        });
+
+        // Function to update the button text based on selection
+        function updateSelectedPeriodsText() {
+            const selected = getSelectedPeriods();
+            if (selected.length === 0) {
+                periodoSelectedText.textContent = "Selecione...";
+            } else if (selected.includes("Integral")) {
+                periodoSelectedText.textContent = "Integral (Dia Todo)";
+            } else {
+                periodoSelectedText.textContent = selected.join(', ');
+            }
+        }
+
+        function getSelectedPeriods() {
+            const checkboxes = periodosContainer.querySelectorAll('input[name="periodo"]:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        // Logic to ensure "Integral" behaves exclusively
+        periodosContainer.addEventListener('change', (e) => {
+            if (e.target.name === 'periodo') {
+                const val = e.target.value;
+                const isChecked = e.target.checked;
+                
+                if (val === 'Integral' && isChecked) {
+                    // Uncheck others
+                    periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
+                        if (cb.value !== 'Integral') cb.checked = false;
+                    });
+                } else if (val !== 'Integral' && isChecked) {
+                    // Uncheck Integral
+                    const integralCb = periodosContainer.querySelector('input[value="Integral"]');
+                    if (integralCb) integralCb.checked = false;
+                }
+                
+                updateSelectedPeriodsText();
+                revalidateAllRows();
+                renderSystemObs();
+            }
+        });
+
         // Função unificada para calcular estoque e quem está com o item
         function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
             const currentPhysicalStock = item.quantity || 0;
@@ -476,18 +575,36 @@
             const item = localItems.find(i => i.id === itemId);
             if (!item) return;
             
-            // Validação visual usa o valor atual dos inputs, para feedback imediato
             const targetDate = dataAgendamentoInput.value;
-            const targetPeriod = periodoAgendamentoInput.value;
+            const selectedPeriods = getSelectedPeriods();
             
-            const availableStock = getAvailableStock(item, targetDate, targetPeriod);
-
             const quantityInput = rowDiv.querySelector('.item-quantity-input');
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
+            
+            if (selectedPeriods.length === 0) {
+                errorP.textContent = "Selecione um período.";
+                errorP.classList.remove('hidden');
+                return;
+            }
 
-            if (!isNaN(requestedQuantity) && requestedQuantity > availableStock) {
-                errorP.textContent = `Disp. ${targetPeriod}: ${availableStock}`;
+            // Check availability for ALL selected periods
+            let hasError = false;
+            let errorMsg = "Disp: ";
+            let details = [];
+
+            selectedPeriods.forEach(period => {
+                const avail = getAvailableStock(item, targetDate, period);
+                const shortPeriod = period.substring(0, 1); // M, T, N, I
+                details.push(`${avail} (${shortPeriod})`);
+                
+                if (!isNaN(requestedQuantity) && requestedQuantity > avail) {
+                    hasError = true;
+                }
+            });
+            
+            if (hasError) {
+                errorP.textContent = errorMsg + details.join(', ');
                 errorP.classList.remove('hidden');
                 quantityInput.classList.add('border-red-500');
             } else {
@@ -543,7 +660,12 @@
             modalItemsContainer.innerHTML = '';
             categorizedItems = {}; 
             const targetDate = dataAgendamentoInput.value;
-            const targetPeriod = periodoAgendamentoInput.value;
+            // For modal list availability, we use the selected periods logic loosely. 
+            // If multiple selected, we show the MIN availability among them or just a generic check?
+            // To be precise: If I selected Morning and Afternoon, I need stock for BOTH.
+            // So available stock is effectively MIN(avail_morning, avail_afternoon).
+            const selectedPeriods = getSelectedPeriods();
+            const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã']; // Default fallback
 
             if (!categoriesCache) {
                 categoriesCache = new Map();
@@ -560,16 +682,23 @@
             const categoriesMap = categoriesCache;
 
             localItems.forEach(item => {
-                // Calcula estoque e quem está com o item
-                const { availableStock, holders } = calculateStockAndHolders(item, targetDate, targetPeriod);
+                // Determine lowest availability across selected periods
+                let minAvail = 9999;
+                let allHolders = new Set();
                 
-                // Agora sempre adicionamos o item, mesmo se availableStock <= 0
-                // para poder exibir como indisponível
+                targetPeriodForModal.forEach(p => {
+                    const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
+                    if (availableStock < minAvail) minAvail = availableStock;
+                    holders.forEach(h => allHolders.add(h));
+                });
+                
+                const holdersList = Array.from(allHolders);
+
                 const categoryName = categoriesMap.get(item.categoryId) || 'Outros';
                 if (!categorizedItems[categoryName]) {
                     categorizedItems[categoryName] = [];
                 }
-                categorizedItems[categoryName].push({ ...item, availableStock, holders });
+                categorizedItems[categoryName].push({ ...item, availableStock: minAvail, holders: holdersList });
             });
 
             const sortedCategories = Object.keys(categorizedItems).sort();
@@ -615,7 +744,7 @@
                         itemButton.innerHTML = `
                             <span class="font-semibold text-gray-700">${item.name}</span>
                             <div class="flex justify-between items-center">
-                                <span class="block text-xs text-gray-500">Disp. ${targetPeriod}: ${item.availableStock}</span>
+                                <span class="block text-xs text-gray-500">Disp: ${item.availableStock}</span>
                             </div>
                         `;
                         itemButton.addEventListener('click', () => selectItemFromModal(item));
@@ -772,7 +901,12 @@
             const today = new Date().toISOString().split('T')[0];
             dataAgendamentoInput.value = today;
             dataAgendamentoInput.min = today;
-            periodoAgendamentoInput.value = 'Manhã'; // Default
+            
+            // Reset checkboxes
+            periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
+                cb.checked = (cb.value === 'Manhã');
+            });
+            updateSelectedPeriodsText();
             
             selectedDates = [];
             renderSelectedDates();
@@ -800,8 +934,8 @@
                 `;
                 
                 tag.querySelector('button').addEventListener('click', () => {
-                    // Remove by date string matching
-                    selectedDates = selectedDates.filter(d => d.date !== dateStr);
+                    // Remove exact match of date AND period
+                    selectedDates = selectedDates.filter(d => !(d.date === dateStr && d.period === periodStr));
                     renderSelectedDates();
                 });
                 
@@ -820,11 +954,13 @@
             let datesToShow = [];
             if (selectedDates.length > 0) {
                 datesToShow = selectedDates;
-            } else if (dataAgendamentoInput.value) {
-                datesToShow = [{ 
-                    date: dataAgendamentoInput.value, 
-                    period: periodoAgendamentoInput.value 
-                }];
+            } else {
+                const currentPeriods = getSelectedPeriods();
+                if (dataAgendamentoInput.value && currentPeriods.length > 0) {
+                    currentPeriods.forEach(p => {
+                        datesToShow.push({ date: dataAgendamentoInput.value, period: p });
+                    });
+                }
             }
 
             if (datesToShow.length === 0) {
@@ -841,21 +977,39 @@
         
         addDateBtn.addEventListener('click', () => {
             const dateVal = dataAgendamentoInput.value;
-            const periodVal = periodoAgendamentoInput.value;
+            const selectedPeriods = getSelectedPeriods();
             
             if (!dateVal) return;
+            if (selectedPeriods.length === 0) {
+                alert('Selecione pelo menos um período.');
+                return;
+            }
             
-            // Check if date already exists in the list (assuming one period per date per submission batch for simplicity,
-            // though techincally you could have different periods on same day. Let's prevent dupe dates to keep it simple.)
-            const exists = selectedDates.some(d => d.date === dateVal);
+            let addedCount = 0;
+            selectedPeriods.forEach(periodVal => {
+                // Check if combination already exists
+                const exists = selectedDates.some(d => d.date === dateVal && d.period === periodVal);
+                
+                if (!exists) {
+                    selectedDates.push({ date: dateVal, period: periodVal });
+                    addedCount++;
+                }
+            });
             
-            if (!exists) {
-                selectedDates.push({ date: dateVal, period: periodVal });
-                // Sort chronologically
-                selectedDates.sort((a, b) => a.date.localeCompare(b.date));
+            if (addedCount > 0) {
+                // Sort chronologically then by period
+                selectedDates.sort((a, b) => {
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return a.period.localeCompare(b.period);
+                });
                 renderSelectedDates();
+                // Opcional: Feedback visual ao adicionar
+                addDateBtn.classList.add('bg-green-100', 'text-green-700');
+                setTimeout(() => {
+                    addDateBtn.classList.remove('bg-green-100', 'text-green-700');
+                }, 300);
             } else {
-                alert('Esta data já foi adicionada à lista. Remova-a primeiro se quiser mudar o período.');
+                alert('Esta data e período já foram adicionados à lista.');
             }
         });
 
@@ -953,10 +1107,7 @@
             revalidateAllRows();
             renderSystemObs();
         });
-        periodoAgendamentoInput.addEventListener('change', () => {
-            revalidateAllRows();
-            renderSystemObs();
-        });
+        // Note: periodosContainer listener already handled above
 
         acessarBtn.addEventListener('click', async () => {
             const matricula = matriculaInput.value.trim();
@@ -1046,14 +1197,19 @@
             if (selectedDates.length > 0) {
                 // Use the list of objects { date, period }
                 datesToProcess = selectedDates;
-            } else if (dataAgendamentoInput.value) {
-                // Use the current input values
-                datesToProcess = [{ 
-                    date: dataAgendamentoInput.value, 
-                    period: periodoAgendamentoInput.value 
-                }];
             } else {
-                alert('Selecione pelo menos uma data.');
+                // Check if user filled inputs but didn't click "+"
+                const dateVal = dataAgendamentoInput.value;
+                const currentPeriods = getSelectedPeriods();
+                if (dateVal && currentPeriods.length > 0) {
+                    currentPeriods.forEach(p => {
+                        datesToProcess.push({ date: dateVal, period: p });
+                    });
+                }
+            }
+            
+            if (datesToProcess.length === 0) {
+                alert('Selecione pelo menos uma data e período.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
                 return;
@@ -1249,7 +1405,13 @@
                 const today = new Date().toISOString().split('T')[0];
                 dataAgendamentoInput.value = today;
                 
-                if (periodo) periodoAgendamentoInput.value = periodo;
+                // Set checkboxes based on the historical period (single value usually)
+                if (periodo) {
+                    periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
+                        cb.checked = (cb.value === periodo);
+                    });
+                    updateSelectedPeriodsText();
+                }
                 
                 document.querySelector('.tab-button[data-tab="solicitacao"]').click();
             }
