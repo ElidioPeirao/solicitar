@@ -36,6 +36,11 @@
             box-shadow: 0 0 15px rgba(0,0,0,0.5);
             backdrop-filter: blur(5px);
         }
+        
+        /* Estilo para tags de data */
+        .date-tag {
+            animation: fadeIn 0.2s ease-out;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 pb-20">
@@ -88,21 +93,46 @@
             <!-- Tab Content: Solicitação -->
             <div id="tab-content-solicitacao" class="form-section">
                 <form id="form-solicitacao" class="mt-6" novalidate>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         <div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                         <div class="flex flex-col">
                             <label for="data-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Data da Retirada</label>
-                            <input type="date" id="data-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" required>
+                            <div class="flex gap-2">
+                                <input type="date" id="data-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" required>
+                                <button type="button" id="add-date-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 rounded-md font-bold transition-colors" title="Adicionar Data com este Período">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <!-- Container para datas selecionadas -->
+                            <div id="selected-dates-container" class="flex flex-wrap gap-2 mt-2 min-h-[1.5rem]"></div>
                         </div>
                         <div>
+                            <label for="periodo-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Período de Uso</label>
+                            <select id="periodo-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm bg-white" required>
+                                <option value="Manhã">Manhã</option>
+                                <option value="Tarde">Tarde</option>
+                                <option value="Noite">Noite</option>
+                                <option value="Integral">Integral (Dia Todo)</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-1 flex flex-col">
                             <label for="observacao" class="block text-sm font-medium text-gray-700 mb-1">Observações (Opcional)</label>
-                            <textarea id="observacao" rows="1" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" placeholder="Ex: Material para a aula de amanhã..."></textarea>
+                            <!-- Área de texto gerada pelo sistema (Bloqueada) -->
+                            <div id="system-obs-readonly" class="bg-gray-100 text-gray-600 p-2 border border-gray-300 border-b-0 rounded-t-md text-xs font-mono whitespace-pre-wrap"></div>
+                            <!-- Área de texto do usuário (Editável) -->
+                            <textarea id="observacao" rows="2" class="w-full p-3 border border-gray-300 rounded-b-md rounded-t-none shadow-sm resize-none focus:ring-0 focus:border-gray-400" placeholder="Adicione mais detalhes aqui..."></textarea>
                         </div>
                     </div>
+                    
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-4 text-sm text-blue-700">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Selecione a Data e o Período, depois clique no <b>+</b> para adicionar. O estoque será validado para todas as combinações no envio.
+                    </div>
+
                     <h3 class="font-semibold text-lg mb-3 text-gray-700 mt-8">Itens Desejados</h3>
                     <div id="itens-list" class="space-y-4"></div>
                     <div class="mt-8 text-center">
                         <button type="submit" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full md:w-auto">
-                            <i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação
+                            <i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)
                         </button>
                     </div>
                 </form>
@@ -295,6 +325,9 @@
         let unsubscribePending = null;
         let unsubscribeMyHistory = null;
         let unsubscribeSolicitacoesCompra = null;
+        
+        // New: Selected dates (with periods) for multi-request
+        let selectedDates = []; // Format: [{ date: '2023-01-01', period: 'Manhã' }, ...]
 
         // DOM Elements
         const matriculaInput = document.getElementById('solicitante-matricula');
@@ -307,6 +340,10 @@
         const acessarBtn = document.getElementById('acessar-btn');
         const trocarUsuarioBtn = document.getElementById('trocar-usuario-btn');
         const dataAgendamentoInput = document.getElementById('data-agendamento');
+        const addDateBtn = document.getElementById('add-date-btn');
+        const selectedDatesContainer = document.getElementById('selected-dates-container');
+        const periodoAgendamentoInput = document.getElementById('periodo-agendamento');
+        const systemObsReadonly = document.getElementById('system-obs-readonly');
 
         // Modals
         const itemModal = document.getElementById('item-selection-modal');
@@ -326,12 +363,16 @@
             unsubscribeItems = onSnapshot(getCollectionRef('itens'), (snapshot) => {
                 countRead(snapshot.docChanges().length);
                 localItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Recalcular validações se itens mudarem
+                revalidateAllRows();
             }, (error) => console.error("Erro ao ouvir itens:", error));
 
             const qPending = query(getCollectionRef('solicitacoes'), where("status", "==", "Pendente"));
             unsubscribePending = onSnapshot(qPending, (snapshot) => {
                 countRead(snapshot.docChanges().length);
                 globalPendingSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Recalcular validações se houver novas reservas
+                revalidateAllRows();
             }, (error) => console.error("Erro ao ouvir pendentes:", error));
 
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
@@ -382,23 +423,50 @@
             }, (error) => console.error("Erro ao ouvir compras:", error));
         }
 
-        function getAvailableStock(item, targetDateStr) {
+        // Função unificada para calcular estoque e quem está com o item
+        function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
             const currentPhysicalStock = item.quantity || 0;
             let reservationsOnDate = 0;
+            const holders = new Set(); // Use Set para nomes únicos
             
-            // Usa APENAS a lista global de pendentes para calcular estoque
+            // Lógica de Interseção de Períodos
             for (const sol of globalPendingSolicitacoes) {
-                // CORREÇÃO: Verifica APENAS a data específica (===) em vez de acumular datas passadas (<=)
-                // Isso permite reservar o mesmo equipamento em dias diferentes
+                // Verifica data exata
                 if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
-                    for (const solItem of sol.itensSolicitados) {
-                        if (solItem.itemId === item.id) {
-                            reservationsOnDate += solItem.quantidade;
+                    
+                    const solPeriod = sol.periodo || 'Integral'; 
+                    let isConflict = false;
+                    
+                    if (targetPeriod === 'Integral') {
+                        isConflict = true; 
+                    } else if (solPeriod === 'Integral') {
+                        isConflict = true;
+                    } else if (targetPeriod === solPeriod) {
+                        isConflict = true;
+                    }
+
+                    if (isConflict) {
+                        for (const solItem of sol.itensSolicitados) {
+                            if (solItem.itemId === item.id) {
+                                reservationsOnDate += solItem.quantidade;
+                                // Adiciona o nome do solicitante à lista de "quem está com o item"
+                                if(sol.solicitanteName) {
+                                    holders.add(sol.solicitanteName);
+                                }
+                            }
                         }
                     }
                 }
             }
-            return currentPhysicalStock - reservationsOnDate;
+            
+            return {
+                availableStock: currentPhysicalStock - reservationsOnDate,
+                holders: Array.from(holders)
+            };
+        }
+
+        function getAvailableStock(item, targetDateStr, targetPeriod) {
+            return calculateStockAndHolders(item, targetDateStr, targetPeriod).availableStock;
         }
 
         function handleStockValidation(rowDiv) {
@@ -408,21 +476,31 @@
             const item = localItems.find(i => i.id === itemId);
             if (!item) return;
             
+            // Validação visual usa o valor atual dos inputs, para feedback imediato
             const targetDate = dataAgendamentoInput.value;
-            const availableStock = getAvailableStock(item, targetDate);
+            const targetPeriod = periodoAgendamentoInput.value;
+            
+            const availableStock = getAvailableStock(item, targetDate, targetPeriod);
 
             const quantityInput = rowDiv.querySelector('.item-quantity-input');
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
 
-            if (requestedQuantity > availableStock) {
-                errorP.textContent = `Disponível para data: ${availableStock}`;
+            if (!isNaN(requestedQuantity) && requestedQuantity > availableStock) {
+                errorP.textContent = `Disp. ${targetPeriod}: ${availableStock}`;
                 errorP.classList.remove('hidden');
                 quantityInput.classList.add('border-red-500');
             } else {
                 errorP.classList.add('hidden');
                 quantityInput.classList.remove('border-red-500');
             }
+        }
+
+        // Função auxiliar para revalidar todas as linhas quando data/periodo muda
+        function revalidateAllRows() {
+            document.querySelectorAll('#itens-list .item-row').forEach(row => {
+                handleStockValidation(row);
+            });
         }
 
         function createItemRow(containerId, itemData = null) {
@@ -465,6 +543,7 @@
             modalItemsContainer.innerHTML = '';
             categorizedItems = {}; 
             const targetDate = dataAgendamentoInput.value;
+            const targetPeriod = periodoAgendamentoInput.value;
 
             if (!categoriesCache) {
                 categoriesCache = new Map();
@@ -481,14 +560,16 @@
             const categoriesMap = categoriesCache;
 
             localItems.forEach(item => {
-                const availableStock = getAvailableStock(item, targetDate);
-                if (availableStock > 0) {
-                    const categoryName = categoriesMap.get(item.categoryId) || 'Outros';
-                    if (!categorizedItems[categoryName]) {
-                        categorizedItems[categoryName] = [];
-                    }
-                    categorizedItems[categoryName].push({ ...item, availableStock });
+                // Calcula estoque e quem está com o item
+                const { availableStock, holders } = calculateStockAndHolders(item, targetDate, targetPeriod);
+                
+                // Agora sempre adicionamos o item, mesmo se availableStock <= 0
+                // para poder exibir como indisponível
+                const categoryName = categoriesMap.get(item.categoryId) || 'Outros';
+                if (!categorizedItems[categoryName]) {
+                    categorizedItems[categoryName] = [];
                 }
+                categorizedItems[categoryName].push({ ...item, availableStock, holders });
             });
 
             const sortedCategories = Object.keys(categorizedItems).sort();
@@ -508,16 +589,38 @@
                     const itemButton = document.createElement('button');
                     itemButton.type = 'button';
                     
-                    itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
-                    itemButton.dataset.itemName = item.name;
+                    const isUnavailable = item.availableStock <= 0;
                     
-                    itemButton.innerHTML = `
-                        <span class="font-semibold text-gray-700">${item.name}</span>
-                        <div class="flex justify-between items-center">
-                            <span class="block text-xs text-gray-500">Disponível: ${item.availableStock}</span>
-                        </div>
-                    `;
-                    itemButton.addEventListener('click', () => selectItemFromModal(item));
+                    if (isUnavailable) {
+                        // Estilo para item indisponível
+                        itemButton.className = `item-button text-left p-2 rounded-md bg-red-50 border border-red-200 opacity-80 cursor-not-allowed`;
+                        itemButton.disabled = true; // Desabilita o clique
+                        
+                        const holdersText = item.holders && item.holders.length > 0 
+                            ? `Com: ${item.holders.join(', ')}` 
+                            : 'Indisponível';
+                            
+                        itemButton.innerHTML = `
+                            <span class="font-semibold text-gray-500">${item.name}</span>
+                            <div class="flex flex-col mt-1">
+                                <span class="text-xs text-red-600 font-bold uppercase"><i class="fas fa-ban mr-1"></i>Esgotado</span>
+                                <span class="text-[10px] text-gray-600 truncate" title="${holdersText}">${holdersText}</span>
+                            </div>
+                        `;
+                    } else {
+                        // Estilo normal
+                        itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
+                        itemButton.dataset.itemName = item.name;
+                        
+                        itemButton.innerHTML = `
+                            <span class="font-semibold text-gray-700">${item.name}</span>
+                            <div class="flex justify-between items-center">
+                                <span class="block text-xs text-gray-500">Disp. ${targetPeriod}: ${item.availableStock}</span>
+                            </div>
+                        `;
+                        itemButton.addEventListener('click', () => selectItemFromModal(item));
+                    }
+
                     itemsGrid.appendChild(itemButton);
                 });
 
@@ -539,7 +642,11 @@
                 let hasVisibleItem = false;
 
                 items.forEach(item => {
-                    const itemName = item.dataset.itemName.toLowerCase();
+                    // Para itens desabilitados que podem não ter dataset.itemName no click, 
+                    // precisamos pegar o nome de dentro do span
+                    const nameElement = item.querySelector('span.font-semibold');
+                    const itemName = nameElement ? nameElement.textContent.toLowerCase() : '';
+                    
                     if (itemName.includes(searchTerm)) {
                         item.style.display = 'block';
                         hasVisibleItem = true;
@@ -604,16 +711,18 @@
                     const statusClasses = { 'Pendente': 'bg-yellow-100 text-yellow-800', 'Concluída': 'bg-green-100 text-green-800', 'Rejeitada': 'bg-red-100 text-red-800', 'Cancelado': 'bg-gray-200 text-gray-700' };
                     const dataAgendada = solicitacao.dataAgendamento ? new Date(solicitacao.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A';
                     const dataPedido = solicitacao.timestamp ? solicitacao.timestamp.toDate().toLocaleDateString('pt-BR') : 'N/A';
+                    const periodo = solicitacao.periodo || 'Integral';
+                    
                     const actionButtons = [];
                     if (solicitacao.status === 'Pendente') {
                         actionButtons.push(`<button data-id="${solicitacao.id}" data-type="retirada" class="cancel-solicitacao-btn text-xs bg-red-100 text-red-700 hover:bg-red-200 font-semibold py-1 px-2 rounded">Cancelar</button>`);
                     }
-                    actionButtons.push(`<button data-solicitacao-items='${JSON.stringify(solicitacao.itensSolicitados)}' class="reutilizar-btn text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-1 px-2 rounded">Reutilizar Pedido</button>`);
+                    actionButtons.push(`<button data-solicitacao-items='${JSON.stringify(solicitacao.itensSolicitados)}' data-periodo="${periodo}" class="reutilizar-btn text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-1 px-2 rounded">Reutilizar Pedido</button>`);
 
                     div.innerHTML = `
                         <div class="flex justify-between items-start">
                             <div>
-                                <p class="font-bold text-gray-700">Pedido de Material: ${dataPedido} <span class="font-normal text-gray-500">(Agendado para: ${dataAgendada})</span></p>
+                                <p class="font-bold text-gray-700">Pedido de Material: ${dataPedido} <span class="font-normal text-gray-500">(Para: ${dataAgendada} - ${periodo})</span></p>
                                 <div class="text-xs text-gray-600 mt-2">
                                     ${solicitacao.itensSolicitados.map(item => `<span>- ${item.quantidade}x ${item.itemName}</span>`).join('<br>')}
                                 </div>
@@ -663,8 +772,92 @@
             const today = new Date().toISOString().split('T')[0];
             dataAgendamentoInput.value = today;
             dataAgendamentoInput.min = today;
+            periodoAgendamentoInput.value = 'Manhã'; // Default
+            
+            selectedDates = [];
+            renderSelectedDates();
+            
             createItemRow('itens-list');
         }
+        
+        // Multi-date handling functions
+        function renderSelectedDates() {
+            selectedDatesContainer.innerHTML = '';
+            selectedDates.forEach(dateObj => {
+                const dateStr = dateObj.date;
+                const periodStr = dateObj.period;
+                
+                const dateInstance = new Date(dateStr + 'T00:00:00');
+                const formattedDate = dateInstance.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                
+                const tag = document.createElement('div');
+                tag.className = 'date-tag bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1';
+                tag.innerHTML = `
+                    <span>${formattedDate} (${periodStr})</span>
+                    <button type="button" class="hover:text-red-500 focus:outline-none" aria-label="Remover data">
+                        &times;
+                    </button>
+                `;
+                
+                tag.querySelector('button').addEventListener('click', () => {
+                    // Remove by date string matching
+                    selectedDates = selectedDates.filter(d => d.date !== dateStr);
+                    renderSelectedDates();
+                });
+                
+                selectedDatesContainer.appendChild(tag);
+            });
+            
+            // Atualiza também o resumo da observação
+            renderSystemObs();
+        }
+        
+        // Função para renderizar o resumo de agendamento na observação
+        function renderSystemObs() {
+            let text = "Agendamento para:\n";
+            
+            // Determina quais datas mostrar: a lista de selecionados OU o input atual (como no envio)
+            let datesToShow = [];
+            if (selectedDates.length > 0) {
+                datesToShow = selectedDates;
+            } else if (dataAgendamentoInput.value) {
+                datesToShow = [{ 
+                    date: dataAgendamentoInput.value, 
+                    period: periodoAgendamentoInput.value 
+                }];
+            }
+
+            if (datesToShow.length === 0) {
+                text += "(Selecione uma data)";
+            } else {
+                datesToShow.forEach(d => {
+                    const dateObj = new Date(d.date + 'T00:00:00');
+                    const formatted = dateObj.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+                    text += `- ${formatted} (${d.period})\n`;
+                });
+            }
+            systemObsReadonly.textContent = text;
+        }
+        
+        addDateBtn.addEventListener('click', () => {
+            const dateVal = dataAgendamentoInput.value;
+            const periodVal = periodoAgendamentoInput.value;
+            
+            if (!dateVal) return;
+            
+            // Check if date already exists in the list (assuming one period per date per submission batch for simplicity,
+            // though techincally you could have different periods on same day. Let's prevent dupe dates to keep it simple.)
+            const exists = selectedDates.some(d => d.date === dateVal);
+            
+            if (!exists) {
+                selectedDates.push({ date: dateVal, period: periodVal });
+                // Sort chronologically
+                selectedDates.sort((a, b) => a.date.localeCompare(b.date));
+                renderSelectedDates();
+            } else {
+                alert('Esta data já foi adicionada à lista. Remova-a primeiro se quiser mudar o período.');
+            }
+        });
 
         function resetKitForm() {
             document.getElementById('create-kit-form').reset();
@@ -755,6 +948,16 @@
             createItemRow('kit-itens-list');
         });
 
+        // Listener para Data e Período - Revalidar estoque ao mudar e atualizar resumo obs
+        dataAgendamentoInput.addEventListener('change', () => {
+            revalidateAllRows();
+            renderSystemObs();
+        });
+        periodoAgendamentoInput.addEventListener('change', () => {
+            revalidateAllRows();
+            renderSystemObs();
+        });
+
         acessarBtn.addEventListener('click', async () => {
             const matricula = matriculaInput.value.trim();
             if (!matricula) return;
@@ -837,56 +1040,104 @@
             const submitBtn = document.getElementById('submit-btn');
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Enviando...';
+            
+            // Determine which dates to process
+            let datesToProcess = [];
+            if (selectedDates.length > 0) {
+                // Use the list of objects { date, period }
+                datesToProcess = selectedDates;
+            } else if (dataAgendamentoInput.value) {
+                // Use the current input values
+                datesToProcess = [{ 
+                    date: dataAgendamentoInput.value, 
+                    period: periodoAgendamentoInput.value 
+                }];
+            } else {
+                alert('Selecione pelo menos uma data.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
+                return;
+            }
 
-            const dataAgendamento = dataAgendamentoInput.value;
             const itensSolicitados = [];
-            let stockError = false;
-
+            
+            // Step 1: Collect Items
             for (const row of document.querySelectorAll('#itens-list .item-row')) {
                 const itemId = row.dataset.itemId;
                 const quantity = parseInt(row.querySelector('.item-quantity-input').value, 10);
 
                 if (!itemId || !quantity || quantity <= 0) continue;
                 
-                handleStockValidation(row);
-                if (!row.querySelector('.error-message').classList.contains('hidden')) stockError = true;
-                
-                itensSolicitados.push({ 
-                    itemId, 
-                    itemName: row.querySelector('.item-select-btn').textContent.trim(), 
-                    quantidade: quantity 
-                });
-            }
-
-            if (stockError) {
-                alert('Corrija os itens com quantidade acima do estoque disponível para a data selecionada.');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
-                return;
+                // Get item details for validation
+                const item = localItems.find(i => i.id === itemId);
+                if(item) {
+                     itensSolicitados.push({ 
+                        itemId, 
+                        itemName: row.querySelector('.item-select-btn').textContent.trim(), 
+                        quantidade: quantity,
+                        // Internal reference for validation
+                        _stockItem: item 
+                    });
+                }
             }
 
             if (itensSolicitados.length === 0) {
                 alert('Adicione pelo menos um item válido à solicitação.');
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
+                return;
+            }
+            
+            // Step 2: Validate Stock for ALL dates
+            let globalValidationPass = true;
+            
+            for (const dateObj of datesToProcess) {
+                for (const reqItem of itensSolicitados) {
+                    const available = getAvailableStock(reqItem._stockItem, dateObj.date, dateObj.period);
+                    if (reqItem.quantidade > available) {
+                        alert(`Estoque insuficiente para o item "${reqItem.itemName}" na data ${new Date(dateObj.date + 'T00:00:00').toLocaleDateString('pt-BR')} (${dateObj.period}).\nDisponível: ${available}, Solicitado: ${reqItem.quantidade}`);
+                        globalValidationPass = false;
+                        break;
+                    }
+                }
+                if (!globalValidationPass) break;
+            }
+            
+            if (!globalValidationPass) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
                 return;
             }
 
+            // Step 3: Remove internal props and Send
+            const cleanItens = itensSolicitados.map(({_stockItem, ...rest}) => rest);
+            
+            // Combinar observação do sistema com observação do usuário
+            const systemObs = document.getElementById('system-obs-readonly').innerText;
+            const userObs = document.getElementById('observacao').value.trim();
+            const finalObservacao = systemObs + (userObs ? '\n\nDetalhes:\n' + userObs : '');
+
             try {
-                await addDoc(getCollectionRef('solicitacoes'), {
-                    solicitanteId: currentProfessor.id,
-                    solicitanteName: currentProfessor.name,
-                    itensSolicitados,
-                    dataAgendamento,
-                    observacao: document.getElementById('observacao').value.trim(),
-                    status: 'Pendente',
-                    timestamp: serverTimestamp()
+                // Generate a request for EACH date
+                const promises = datesToProcess.map(dateObj => {
+                    return addDoc(getCollectionRef('solicitacoes'), {
+                        solicitanteId: currentProfessor.id,
+                        solicitanteName: currentProfessor.name,
+                        itensSolicitados: cleanItens,
+                        dataAgendamento: dateObj.date,
+                        periodo: dateObj.period, 
+                        observacao: finalObservacao, // Usa a observação combinada
+                        status: 'Pendente',
+                        timestamp: serverTimestamp()
+                    });
                 });
                 
+                await Promise.all(promises);
+                
                 // Monitor: Contagem de gravação
-                countWrite(1);
+                countWrite(datesToProcess.length);
 
-                showSuccessModal('Sua solicitação foi enviada com sucesso!', () => {
+                showSuccessModal(`Sucesso! Foram gerados ${datesToProcess.length} pedido(s).`, () => {
                     resetRequestForm();
                 });
             } catch (error) {
@@ -894,7 +1145,7 @@
                 alert("Ocorreu um erro ao enviar a solicitação. Tente novamente.");
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação';
+                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
             }
         });
 
@@ -988,6 +1239,8 @@
 
             if (reutilizarBtn) {
                 const items = JSON.parse(reutilizarBtn.dataset.solicitacaoItems);
+                const periodo = reutilizarBtn.dataset.periodo;
+                
                 const itemListContainer = document.getElementById('itens-list');
                 itemListContainer.innerHTML = '';
                 items.forEach(item => createItemRow('itens-list', item));
@@ -996,12 +1249,12 @@
                 const today = new Date().toISOString().split('T')[0];
                 dataAgendamentoInput.value = today;
                 
+                if (periodo) periodoAgendamentoInput.value = periodo;
+                
                 document.querySelector('.tab-button[data-tab="solicitacao"]').click();
             }
         });
 
-        // Event listener do Formulário de Compra REMOVIDO para evitar erros, pois o formulário não existe mais no DOM.
-        
         // Listeners do Modal
         closeModalBtn.addEventListener('click', closeItemModal);
         itemModal.addEventListener('click', (e) => {
