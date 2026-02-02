@@ -171,7 +171,7 @@
                         <p id="kits-placeholder" class="text-center py-4 text-gray-500">Nenhum kit salvo.</p>
                     </div>
                     <div>
-                        <h3 class="font-semibold text-lg mb-3 text-gray-700">Criar Novo Kit</h3>
+                        <h3 class="font-semibold text-lg mb-3 text-gray-700" id="create-kit-title">Criar Novo Kit</h3>
                         <form id="create-kit-form" class="bg-gray-50 p-4 rounded-lg" novalidate>
                              <div class="mb-4">
                                 <label for="kit-name" class="block text-sm font-medium text-gray-700 mb-1">Nome do Kit</label>
@@ -179,7 +179,11 @@
                              </div>
                              <label class="block text-sm font-medium text-gray-700 mb-1">Itens do Kit</label>
                              <div id="kit-itens-list" class="space-y-3"></div>
-                             <button type="submit" class="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg">Salvar Kit</button>
+                             
+                             <div class="flex gap-2 mt-6">
+                                <button type="button" id="cancel-edit-kit-btn" class="hidden w-1/3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 rounded-lg transition-colors">Cancelar</button>
+                                <button type="submit" id="submit-kit-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors">Salvar Kit</button>
+                             </div>
                         </form>
                     </div>
                 </div>
@@ -352,6 +356,10 @@
         
         // New: Selected dates (with periods) for multi-request
         let selectedDates = []; // Format: [{ date: '2023-01-01', period: 'Manhã' }, ...]
+        
+        // Kit Editing State
+        let editingKitId = null;
+        let localKits = []; // Cache to facilitate editing
 
         // DOM Elements
         const matriculaInput = document.getElementById('solicitante-matricula');
@@ -367,6 +375,14 @@
         const addDateBtn = document.getElementById('add-date-btn');
         const selectedDatesContainer = document.getElementById('selected-dates-container');
         const systemObsReadonly = document.getElementById('system-obs-readonly');
+        
+        // Kit Form Elements
+        const createKitTitle = document.getElementById('create-kit-title');
+        const createKitForm = document.getElementById('create-kit-form');
+        const kitNameInput = document.getElementById('kit-name');
+        const kitItemsList = document.getElementById('kit-itens-list');
+        const submitKitBtn = document.getElementById('submit-kit-btn');
+        const cancelEditKitBtn = document.getElementById('cancel-edit-kit-btn');
         
         // Custom Dropdown Elements
         const periodoDropdownBtn = document.getElementById('periodo-dropdown-btn');
@@ -575,12 +591,29 @@
             const item = localItems.find(i => i.id === itemId);
             if (!item) return;
             
-            const targetDate = dataAgendamentoInput.value;
-            const selectedPeriods = getSelectedPeriods();
-            
+            // Context check: If it's a Kit Creation row, validate against physical stock only
+            const isKitCreation = rowDiv.closest('#kit-itens-list');
+
             const quantityInput = rowDiv.querySelector('.item-quantity-input');
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
+
+            if (isKitCreation) {
+                const physicalStock = item.quantity || 0;
+                if (!isNaN(requestedQuantity) && requestedQuantity > physicalStock) {
+                     errorP.textContent = `Máx físico: ${physicalStock}`;
+                     errorP.classList.remove('hidden');
+                     quantityInput.classList.add('border-red-500');
+                } else {
+                     errorP.classList.add('hidden');
+                     quantityInput.classList.remove('border-red-500');
+                }
+                return;
+            }
+
+            // Normal Request Validation
+            const targetDate = dataAgendamentoInput.value;
+            const selectedPeriods = getSelectedPeriods();
             
             if (selectedPeriods.length === 0) {
                 errorP.textContent = "Selecione um período.";
@@ -659,13 +692,13 @@
         async function openItemModal() {
             modalItemsContainer.innerHTML = '';
             categorizedItems = {}; 
+            
+            // Check Context: Is this for Kit Creation?
+            const isKitCreation = activeItemRow && activeItemRow.closest('#kit-itens-list');
+
             const targetDate = dataAgendamentoInput.value;
-            // For modal list availability, we use the selected periods logic loosely. 
-            // If multiple selected, we show the MIN availability among them or just a generic check?
-            // To be precise: If I selected Morning and Afternoon, I need stock for BOTH.
-            // So available stock is effectively MIN(avail_morning, avail_afternoon).
             const selectedPeriods = getSelectedPeriods();
-            const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã']; // Default fallback
+            const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã']; 
 
             if (!categoriesCache) {
                 categoriesCache = new Map();
@@ -682,15 +715,20 @@
             const categoriesMap = categoriesCache;
 
             localItems.forEach(item => {
-                // Determine lowest availability across selected periods
                 let minAvail = 9999;
                 let allHolders = new Set();
                 
-                targetPeriodForModal.forEach(p => {
-                    const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
-                    if (availableStock < minAvail) minAvail = availableStock;
-                    holders.forEach(h => allHolders.add(h));
-                });
+                if (isKitCreation) {
+                    // For Kit Creation: Ignore date reservations, use physical stock
+                    minAvail = item.quantity || 0;
+                } else {
+                    // For Request: Calculate based on reservations
+                    targetPeriodForModal.forEach(p => {
+                        const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
+                        if (availableStock < minAvail) minAvail = availableStock;
+                        holders.forEach(h => allHolders.add(h));
+                    });
+                }
                 
                 const holdersList = Array.from(allHolders);
 
@@ -725,7 +763,7 @@
                         itemButton.className = `item-button text-left p-2 rounded-md bg-red-50 border border-red-200 opacity-80 cursor-not-allowed`;
                         itemButton.disabled = true; // Desabilita o clique
                         
-                        const holdersText = item.holders && item.holders.length > 0 
+                        const holdersText = !isKitCreation && item.holders && item.holders.length > 0 
                             ? `Com: ${item.holders.join(', ')}` 
                             : 'Indisponível';
                             
@@ -741,10 +779,12 @@
                         itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
                         itemButton.dataset.itemName = item.name;
                         
+                        const stockLabel = isKitCreation ? 'Total Físico' : 'Disp';
+
                         itemButton.innerHTML = `
                             <span class="font-semibold text-gray-700">${item.name}</span>
                             <div class="flex justify-between items-center">
-                                <span class="block text-xs text-gray-500">Disp: ${item.availableStock}</span>
+                                <span class="block text-xs text-gray-500">${stockLabel}: ${item.availableStock}</span>
                             </div>
                         `;
                         itemButton.addEventListener('click', () => selectItemFromModal(item));
@@ -1014,10 +1054,46 @@
         });
 
         function resetKitForm() {
-            document.getElementById('create-kit-form').reset();
-            document.getElementById('kit-itens-list').innerHTML = '';
+            createKitForm.reset();
+            kitItemsList.innerHTML = '';
             createItemRow('kit-itens-list');
+            
+            // Reset Edit Mode
+            editingKitId = null;
+            createKitTitle.textContent = "Criar Novo Kit";
+            submitKitBtn.textContent = "Salvar Kit";
+            submitKitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            submitKitBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+            cancelEditKitBtn.classList.add('hidden');
         }
+        
+        function startEditingKit(kit) {
+            editingKitId = kit.id;
+            
+            // Scroll to form
+            createKitForm.scrollIntoView({ behavior: 'smooth' });
+            
+            // Populate Fields
+            kitNameInput.value = kit.kitName;
+            
+            // Populate Items
+            kitItemsList.innerHTML = '';
+            if (kit.items && kit.items.length > 0) {
+                kit.items.forEach(item => {
+                    createItemRow('kit-itens-list', item);
+                });
+            }
+            createItemRow('kit-itens-list'); // Add empty row
+            
+            // Change UI
+            createKitTitle.textContent = "Editando Kit";
+            submitKitBtn.textContent = "Atualizar Kit";
+            submitKitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            submitKitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            cancelEditKitBtn.classList.remove('hidden');
+        }
+        
+        cancelEditKitBtn.addEventListener('click', resetKitForm);
 
         function showSuccessModal(message, callback) {
             document.getElementById('success-message').textContent = message;
@@ -1076,8 +1152,13 @@
             countRead(querySnapshot.size);
 
             document.getElementById('kits-placeholder').classList.toggle('hidden', !querySnapshot.empty);
+            
+            localKits = []; // Reset local cache
+            
             querySnapshot.forEach(doc => {
                 const kit = { id: doc.id, ...doc.data() };
+                localKits.push(kit);
+                
                 const div = document.createElement('div');
                 div.className = 'p-4 border rounded-lg bg-white';
                 div.innerHTML = `
@@ -1088,7 +1169,10 @@
                                 ${kit.items.map(i => `<span>${i.quantidade}x ${i.itemName}</span>`).join('<br>')}
                             </div>
                         </div>
-                        <button data-id="${kit.id}" class="delete-kit-btn text-red-400 hover:text-red-600 ml-2 text-sm"><i class="fas fa-trash"></i></button>
+                        <div class="flex gap-2">
+                            <button data-id="${kit.id}" class="edit-kit-btn text-blue-400 hover:text-blue-600 text-sm" title="Editar Kit"><i class="fas fa-edit"></i></button>
+                            <button data-id="${kit.id}" class="delete-kit-btn text-red-400 hover:text-red-600 text-sm" title="Excluir Kit"><i class="fas fa-trash"></i></button>
+                        </div>
                     </div>
                     <button data-kit-items='${JSON.stringify(kit.items)}' class="use-kit-btn mt-3 w-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-1 px-3 rounded text-sm">Usar este Kit</button>
                 `;
@@ -1305,7 +1389,7 @@
             }
         });
 
-        document.getElementById('create-kit-form').addEventListener('submit', async (e) => {
+        createKitForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const kitName = document.getElementById('kit-name').value.trim();
             if (!kitName) { alert('Por favor, dê um nome ao seu kit.'); return; }
@@ -1330,21 +1414,35 @@
             }
 
             try {
-                await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName, items });
+                if (editingKitId) {
+                    // Update existing kit
+                    await updateDoc(doc(db, 'almoxarifado', appId, 'kits', editingKitId), {
+                        kitName,
+                        items
+                    });
+                    showSuccessModal('Seu kit foi atualizado com sucesso!');
+                } else {
+                    // Create new kit
+                    await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName, items });
+                    showSuccessModal('Seu kit foi salvo com sucesso!');
+                }
+                
                 // Monitor: Contagem de gravação
                 countWrite(1);
 
                 resetKitForm();
                 renderKits();
-                showSuccessModal('Seu kit foi salvo com sucesso!');
+                
             } catch (err) {
                 console.error("Erro ao salvar kit:", err);
+                alert("Erro ao salvar o kit.");
             }
         });
 
         document.getElementById('kits-list').addEventListener('click', (e) => {
             const useBtn = e.target.closest('.use-kit-btn');
             const deleteBtn = e.target.closest('.delete-kit-btn');
+            const editBtn = e.target.closest('.edit-kit-btn');
 
             if (useBtn) {
                 const items = JSON.parse(useBtn.dataset.kitItems);
@@ -1363,8 +1461,20 @@
                         countDelete(1);
                         renderKits();
                         showSuccessModal('Kit excluído com sucesso.');
+                        // If we were editing this kit, cancel editing
+                        if (editingKitId === kitId) {
+                            resetKitForm();
+                        }
                     }).catch(err => console.error("Erro ao excluir kit:", err));
                 });
+            }
+            
+            if (editBtn) {
+                const kitId = editBtn.dataset.id;
+                const kit = localKits.find(k => k.id === kitId);
+                if (kit) {
+                    startEditingKit(kit);
+                }
             }
         });
         
