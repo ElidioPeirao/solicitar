@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solicitação de Material ao Almoxarifado</title>
+    <title>Solicitação de Material - Almoxarifado</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome for Icons -->
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
         body { font-family: 'Inter', sans-serif; }
         .form-section, .tabs-container { display: none; }
@@ -21,31 +21,79 @@
             color: #3b82f6;
             background-color: #eff6ff;
         }
+        /* Animações */
         .modal-enter { animation: fadeIn 0.3s ease-out forwards; }
-        .modal-leave { animation: fadeOut 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-        details > summary { list-style: none; cursor: pointer; }
-        details > summary::-webkit-details-marker { display: none; }
-        details > summary .chevron { transition: transform 0.2s; }
-        details[open] > summary .chevron { transform: rotate(90deg); }
         
-        /* Estilo para o Monitor */
-        #firebase-monitor {
-            font-family: 'Courier New', Courier, monospace;
-            box-shadow: 0 0 15px rgba(0,0,0,0.5);
-            backdrop-filter: blur(5px);
+        /* Chat Styles */
+        .chat-message-bubble {
+            position: relative;
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
-        
+        .chat-bubble-me {
+            background-color: #2563eb; /* blue-600 */
+            color: white;
+            border-bottom-right-radius: 2px;
+            margin-left: auto;
+        }
+        .chat-bubble-other {
+            background-color: #f3f4f6; /* gray-100 */
+            color: #1f2937; /* gray-800 */
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 2px;
+            margin-right: auto;
+        }
+        #prof-chat-window { transition: transform 0.3s ease-in-out, opacity 0.3s; }
+        .hidden-chat { transform: translateY(20px); opacity: 0; pointer-events: none; }
+        .visible-chat { transform: translateY(0); opacity: 1; pointer-events: all; }
+
         /* Estilo para tags de data */
-        .date-tag {
-            animation: fadeIn 0.2s ease-out;
+        .date-tag { animation: fadeIn 0.2s ease-out; }
+
+        /* Monitor DB */
+        #db-monitor {
+            font-family: 'Courier New', Courier, monospace;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            z-index: 9999;
         }
+        .flash-update {
+            animation: flashGreen 0.5s ease-out;
+        }
+        .flash-write {
+            animation: flashRed 0.5s ease-out;
+        }
+        @keyframes flashGreen { 0% { background-color: #86efac; } 100% { background-color: black; } }
+        @keyframes flashRed { 0% { background-color: #fca5a5; } 100% { background-color: black; } }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 pb-20">
 
-    <div class="container mx-auto max-w-4xl w-full">
+    <!-- MONITOR DE DB (Oculto) -->
+    <div id="db-monitor" class="hidden fixed bottom-4 left-4 bg-black text-green-400 p-3 rounded-lg text-xs border border-green-700 opacity-90 hover:opacity-100 cursor-default select-none">
+        <div class="font-bold border-b border-green-800 mb-1 pb-1 flex justify-between items-center gap-4">
+            <span><i class="fas fa-database mr-1"></i>Firebase Monitor</span>
+            <button id="reset-monitor" class="text-gray-500 hover:text-white" title="Zerar contadores"><i class="fas fa-sync-alt"></i></button>
+        </div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span>Leituras:</span>
+            <span id="mon-reads" class="text-right font-bold text-white">0</span>
+            
+            <span>Escritas:</span>
+            <span id="mon-writes" class="text-right font-bold text-yellow-400">0</span>
+        </div>
+        <div class="mt-1 text-[10px] text-gray-500 italic text-center" id="mon-status">Aguardando...</div>
+        <div class="mt-2 border-t border-green-900 pt-1 text-[9px] text-gray-400">
+            <span id="cache-status-indicator">Verificando Cache...</span>
+        </div>
+    </div>
+
+    <div class="container mx-auto max-w-4xl w-full mb-16">
         <!-- Main Container -->
         <div class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
             <h1 class="text-2xl md:text-3xl font-bold mb-6 text-gray-700 text-center">
@@ -61,30 +109,30 @@
                         <span id="matricula-feedback-icon" class="matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-0"></span>
                     </div>
                     <button type="button" id="acessar-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-5 rounded-lg">Acessar</button>
-                    <button type="button" id="trocar-usuario-btn" class="hidden bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-5 rounded-lg">Trocar</button>
+                    <button type="button" id="trocar-usuario-btn" class="hidden bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-5 rounded-lg">Sair</button>
                 </div>
                 <div id="professor-info" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md hidden">
-                    <span class="font-medium text-blue-800">Colaborador:</span>
+                    <span class="font-medium text-blue-800">Olá, </span>
                     <span id="professor-name-display" class="font-bold text-blue-900"></span>
                 </div>
                 <p id="matricula-error" class="text-red-600 text-sm font-semibold mt-1 hidden">Matrícula não encontrada.</p>
             </div>
 
             <!-- Tabs Navigation -->
-            <div class="tabs-container mt-8">
-                <div class="border-b border-gray-200">
+            <div class="tabs-container mt-8 relative">
+                <div class="border-b border-gray-200 clear-both">
                     <nav class="flex -mb-px" aria-label="Tabs">
                         <button data-tab="solicitacao" class="tab-button active w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
-                           <i class="fas fa-edit mr-2"></i>Fazer Solicitação
+                           <i class="fas fa-edit mr-2"></i>Solicitar
                         </button>
                         <button data-tab="kits" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
-                           <i class="fas fa-box-archive mr-2"></i>Meus Kits
+                           <i class="fas fa-box-archive mr-2"></i>Kits
                         </button>
                         <button data-tab="historico" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
                            <i class="fas fa-history mr-2"></i>Histórico
                         </button>
                         <button data-tab="compra" class="tab-button w-1/4 text-center py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-blue-600">
-                           <i class="fas fa-shopping-cart mr-2"></i>Solicitar Compra
+                           <i class="fas fa-shopping-cart mr-2"></i>Compras
                         </button>
                     </nav>
                 </div>
@@ -98,23 +146,21 @@
                             <label for="data-agendamento" class="block text-sm font-medium text-gray-700 mb-1">Data da Retirada</label>
                             <div class="flex gap-2">
                                 <input type="date" id="data-agendamento" class="w-full p-3 border border-gray-300 rounded-md shadow-sm" required>
-                                <button type="button" id="add-date-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 rounded-md font-bold transition-colors" title="Adicionar Data com os Períodos Selecionados">
+                                <button type="button" id="add-date-btn" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 rounded-md font-bold transition-colors" title="Adicionar Data">
                                     <i class="fas fa-plus"></i>
                                 </button>
                             </div>
-                            <!-- Container para datas selecionadas -->
                             <div id="selected-dates-container" class="flex flex-wrap gap-2 mt-2 min-h-[1.5rem]"></div>
                         </div>
                         
-                        <!-- Coluna Períodos (Dropdown Customizado) -->
+                        <!-- Coluna Períodos -->
                         <div class="relative">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Períodos de Uso</label>
-                            <button type="button" id="periodo-dropdown-btn" class="w-full p-3 border border-gray-300 rounded-md shadow-sm bg-white text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button type="button" id="periodo-dropdown-btn" class="w-full p-3 border border-gray-300 rounded-md shadow-sm bg-white text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <span id="periodo-selected-text" class="truncate text-gray-700">Manhã</span>
                                 <i class="fas fa-chevron-down text-gray-400 text-sm ml-2"></i>
                             </button>
                             
-                            <!-- Dropdown Content (Oculto inicialmente) -->
                             <div id="periodo-dropdown-content" class="hidden absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-xl py-1">
                                 <div id="periodos-container" class="flex flex-col">
                                     <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
@@ -139,24 +185,17 @@
                         </div>
 
                         <div class="md:col-span-1 flex flex-col">
-                            <label for="observacao" class="block text-sm font-medium text-gray-700 mb-1">Observações (Opcional)</label>
-                            <!-- Área de texto gerada pelo sistema (Bloqueada) -->
+                            <label for="observacao" class="block text-sm font-medium text-gray-700 mb-1">Observações</label>
                             <div id="system-obs-readonly" class="bg-gray-100 text-gray-600 p-2 border border-gray-300 border-b-0 rounded-t-md text-xs font-mono whitespace-pre-wrap"></div>
-                            <!-- Área de texto do usuário (Editável) -->
-                            <textarea id="observacao" rows="2" class="w-full p-3 border border-gray-300 rounded-b-md rounded-t-none shadow-sm resize-none focus:ring-0 focus:border-gray-400" placeholder="Adicione mais detalhes aqui..."></textarea>
+                            <textarea id="observacao" rows="2" class="w-full p-3 border border-gray-300 rounded-b-md rounded-t-none shadow-sm resize-none" placeholder="Detalhes opcionais..."></textarea>
                         </div>
                     </div>
                     
-                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mt-4 text-sm text-blue-700">
-                        <i class="fas fa-info-circle mr-2"></i>
-                        Selecione a Data e os Períodos, depois clique no <b>+</b> para adicionar. O estoque será validado para todas as combinações no envio.
-                    </div>
-
                     <h3 class="font-semibold text-lg mb-3 text-gray-700 mt-8">Itens Desejados</h3>
                     <div id="itens-list" class="space-y-4"></div>
                     <div class="mt-8 text-center">
-                        <button type="submit" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 w-full md:w-auto">
-                            <i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)
+                        <button type="submit" id="submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg w-full md:w-auto">
+                            <i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação
                         </button>
                     </div>
                 </form>
@@ -181,8 +220,8 @@
                              <div id="kit-itens-list" class="space-y-3"></div>
                              
                              <div class="flex gap-2 mt-6">
-                                <button type="button" id="cancel-edit-kit-btn" class="hidden w-1/3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 rounded-lg transition-colors">Cancelar</button>
-                                <button type="submit" id="submit-kit-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg transition-colors">Salvar Kit</button>
+                                <button type="button" id="cancel-edit-kit-btn" class="hidden w-1/3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 rounded-lg">Cancelar</button>
+                                <button type="submit" id="submit-kit-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg">Salvar Kit</button>
                              </div>
                         </form>
                     </div>
@@ -198,42 +237,66 @@
                 </div>
             </div>
 
-            <!-- Tab Content: Solicitar Compra (EM DESENVOLVIMENTO) -->
+            <!-- Tab Content: Solicitar Compra -->
             <div id="tab-content-compra" class="form-section">
                 <div class="flex flex-col items-center justify-center bg-white pt-10 pb-10 rounded-lg min-h-[300px]">
                     <div class="bg-blue-50 p-6 rounded-full mb-6">
                         <i class="fas fa-hammer text-6xl text-blue-400"></i>
                     </div>
                     <h2 class="text-2xl font-bold text-gray-700 mb-2">Em Desenvolvimento</h2>
-                    <p class="text-gray-500 text-center max-w-md px-4">
-                        O módulo de solicitação de compras externas está sendo aprimorado para melhor atendê-lo.
-                    </p>
-                    <span class="mt-4 px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-mono border border-gray-200">
-                        Status: Construção
-                    </span>
+                    <p class="text-gray-500 text-center max-w-md px-4">O módulo de solicitação de compras externas está em manutenção.</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Monitor de Recursos Firebase (OCULTO) -->
-    <div id="firebase-monitor" class="hidden fixed bottom-4 right-4 bg-gray-900 text-white p-4 rounded-lg shadow-2xl z-50 text-xs opacity-90 hover:opacity-100 transition-opacity">
-        <div class="flex justify-between items-center mb-2 border-b border-gray-700 pb-1">
-            <span class="font-bold text-green-400"><i class="fas fa-server mr-2"></i>Monitor Firebase</span>
-            <button onclick="document.getElementById('firebase-monitor').style.display='none'" class="text-gray-500 hover:text-white ml-4">&times;</button>
+    <!-- ===== CHAT FLUTUANTE ===== -->
+    
+    <!-- Botão Flutuante (FAB) -->
+    <button id="prof-chat-trigger" class="hidden fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-2xl z-40 transition-transform transform hover:scale-110">
+        <i class="fas fa-comment-dots text-2xl"></i>
+        <!-- Badge de mensagens não lidas -->
+        <span id="prof-chat-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center border-2 border-white">0</span>
+    </button>
+
+    <!-- Janela de Chat -->
+    <div id="prof-chat-window" class="hidden-chat fixed bottom-24 right-4 sm:right-6 w-[90%] sm:w-[350px] bg-white rounded-xl shadow-2xl z-40 flex flex-col overflow-hidden border border-gray-200 h-[500px] max-h-[70vh]">
+        <!-- Chat Header -->
+        <div class="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/20 p-2 rounded-full"><i class="fas fa-headset"></i></div>
+                <div>
+                    <h3 class="font-bold text-sm">Almoxarifado</h3>
+                    <p class="text-[10px] text-blue-100 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 bg-green-400 rounded-full inline-block"></span> Online
+                    </p>
+                </div>
+            </div>
+            <button id="close-prof-chat" class="text-white hover:bg-white/10 p-1 rounded-full transition"><i class="fas fa-times"></i></button>
         </div>
-        <div class="grid grid-cols-2 gap-x-4 gap-y-2">
-            <div>Leituras (Reads):</div>
-            <div id="monitor-reads" class="text-right font-bold text-blue-400">0</div>
-            
-            <div>Gravações (Writes):</div>
-            <div id="monitor-writes" class="text-right font-bold text-yellow-400">0</div>
-            
-            <div>Exclusões (Deletes):</div>
-            <div id="monitor-deletes" class="text-right font-bold text-red-400">0</div>
+        
+        <!-- Área de Mensagens -->
+        <div id="prof-chat-messages" class="flex-grow p-4 overflow-y-auto bg-gray-50 space-y-3">
+            <div class="flex justify-center text-xs text-gray-400 my-4">
+                <span>Início da conversa</span>
+            </div>
+            <!-- Mensagem de boas-vindas padrão -->
+            <div class="flex w-full justify-start">
+                <div class="chat-message-bubble chat-bubble-other">
+                    <p>Olá! Em que podemos ajudar com sua solicitação hoje?</p>
+                    <span class="text-[9px] text-gray-400 block text-right mt-1">Agora</span>
+                </div>
+            </div>
         </div>
-        <div class="mt-2 text-[10px] text-gray-500 text-center">
-            *Estimativa de custo desta sessão
+
+        <!-- Input de Mensagem -->
+        <div class="p-3 bg-white border-t">
+            <form id="prof-chat-form" class="flex gap-2">
+                <input type="text" id="prof-chat-input" class="flex-grow p-3 bg-gray-100 border-none rounded-full px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all" placeholder="Digite uma mensagem..." autocomplete="off">
+                <button type="submit" class="bg-blue-600 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-blue-700 shadow-md transition-colors">
+                    <i class="fas fa-paper-plane text-xs"></i>
+                </button>
+            </form>
         </div>
     </div>
 
@@ -241,7 +304,7 @@
     <div id="status-update-modal" class="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 hidden modal-enter">
         <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center">
             <div id="status-update-icon-container" class="mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-5"></div>
-            <h3 id="status-update-title" class="text-2xl font-bold text-gray-800">Atualização de Pedido</h3>
+            <h3 class="text-2xl font-bold text-gray-800">Atualização</h3>
             <p id="status-update-message" class="my-4 text-gray-600"></p>
             <button id="status-update-ok-btn" class="w-full text-white font-bold py-3 px-6 rounded-lg">OK</button>
         </div>
@@ -252,7 +315,7 @@
             <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-5">
                 <i class="fas fa-check text-4xl text-green-600"></i>
             </div>
-            <h3 class="text-2xl font-bold text-gray-800">Operação Realizada!</h3>
+            <h3 class="text-2xl font-bold text-gray-800">Sucesso!</h3>
             <p id="success-message" class="my-4 text-gray-600"></p>
             <button id="success-ok-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">OK</button>
         </div>
@@ -277,7 +340,7 @@
             <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100 mb-5">
                 <i class="fas fa-exclamation-triangle text-4xl text-yellow-600"></i>
             </div>
-            <h3 class="text-2xl font-bold text-gray-800">Confirmar Ação</h3>
+            <h3 class="text-2xl font-bold text-gray-800">Confirmar</h3>
             <p id="confirm-message" class="my-4 text-gray-600"></p>
             <div class="flex justify-center gap-4 mt-6">
                 <button id="confirm-cancel-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">Cancelar</button>
@@ -286,41 +349,25 @@
         </div>
     </div>
 
-
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // --- MONITOR DE RECURSOS FIREBASE ---
-        let sessionReads = 0;
-        let sessionWrites = 0;
-        let sessionDeletes = 0;
-
-        function updateMonitorUI() {
-            document.getElementById('monitor-reads').textContent = sessionReads;
-            document.getElementById('monitor-writes').textContent = sessionWrites;
-            document.getElementById('monitor-deletes').textContent = sessionDeletes;
-            
-            // Efeito visual ao atualizar (removido para manter oculto o comportamento)
-        }
-
-        function countRead(qtd = 1) {
-            if (qtd > 0) {
-                sessionReads += qtd;
-                updateMonitorUI();
-            }
-        }
-
-        function countWrite(qtd = 1) {
-            sessionWrites += qtd;
-            updateMonitorUI();
-        }
-
-        function countDelete(qtd = 1) {
-            sessionDeletes += qtd;
-            updateMonitorUI();
-        }
-        // ------------------------------------
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc as _addDoc, 
+            getDocs as _getDocs, 
+            deleteDoc as _deleteDoc, 
+            doc, 
+            query, 
+            where, 
+            serverTimestamp, 
+            onSnapshot as _onSnapshot, 
+            updateDoc as _updateDoc, 
+            setDoc as _setDoc, 
+            orderBy, 
+            increment,
+            limit
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCiSA3hcGqJ4BKtkxNrS9DBrEP4NcpxAVo",
@@ -337,226 +384,469 @@
         const db = getFirestore(app);
         const getCollectionRef = (name) => collection(db, 'almoxarifado', appId, name);
 
-        // State variables
+        // --- SISTEMA DE MONITORAMENTO DE DB ---
+        const dbMonitor = {
+            reads: 0,
+            writes: 0,
+            readsEl: document.getElementById('mon-reads'),
+            writesEl: document.getElementById('mon-writes'),
+            statusEl: document.getElementById('mon-status'),
+            boxEl: document.getElementById('db-monitor'),
+            
+            updateUI: function() {
+                this.readsEl.innerText = this.reads;
+                this.writesEl.innerText = this.writes;
+            },
+            
+            logRead: function(count = 1) {
+                this.reads += count;
+                this.updateUI();
+                this.flash(this.boxEl, 'flash-update');
+                this.statusEl.innerText = `Lido: +${count} docs`;
+                setTimeout(() => this.statusEl.innerText = 'Aguardando...', 2000);
+            },
+            
+            logWrite: function(count = 1) {
+                this.writes += count;
+                this.updateUI();
+                this.flash(this.boxEl, 'flash-write');
+                this.statusEl.innerText = `Escrito: +${count} ops`;
+                setTimeout(() => this.statusEl.innerText = 'Aguardando...', 2000);
+            },
+
+            flash: function(el, className) {
+                el.classList.remove(className);
+                void el.offsetWidth; // trigger reflow
+                el.classList.add(className);
+            },
+            
+            reset: function() {
+                this.reads = 0;
+                this.writes = 0;
+                this.updateUI();
+                this.statusEl.innerText = 'Resetado';
+            }
+        };
+
+        document.getElementById('reset-monitor').addEventListener('click', () => dbMonitor.reset());
+
+        // --- WRAPPERS DO FIREBASE (INTERCEPTADORES) ---
+        
+        async function getDocs(q) {
+            const snap = await _getDocs(q);
+            dbMonitor.logRead(snap.size); // Conta documentos retornados
+            return snap;
+        }
+
+        async function addDoc(ref, data) {
+            const res = await _addDoc(ref, data);
+            dbMonitor.logWrite(1); // 1 Escrita
+            return res;
+        }
+
+        async function setDoc(ref, data, options) {
+            const res = await _setDoc(ref, data, options);
+            dbMonitor.logWrite(1); // 1 Escrita
+            return res;
+        }
+
+        async function updateDoc(ref, data) {
+            const res = await _updateDoc(ref, data);
+            dbMonitor.logWrite(1); // 1 Escrita (Atualização)
+            return res;
+        }
+
+        async function deleteDoc(ref) {
+            const res = await _deleteDoc(ref);
+            dbMonitor.logWrite(1); // 1 Escrita (Deleção conta como escrita)
+            return res;
+        }
+
+        function onSnapshot(refOrQuery, callback) {
+            return _onSnapshot(refOrQuery, (snap) => {
+                // Verificar se é uma lista (tem docChanges) ou um documento único
+                if (typeof snap.docChanges === 'function') {
+                    const changes = snap.docChanges().length;
+                    if (changes > 0) dbMonitor.logRead(changes);
+                } else {
+                    dbMonitor.logRead(1);
+                }
+                callback(snap);
+            });
+        }
+
+        // --- CONSTANTES DE CACHE ---
+        const ITEMS_CACHE_KEY = 'almox_items_cache_v1';
+        const CATS_CACHE_KEY = 'almox_cats_cache_v1';
+        const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 1 Semana
+
+        // --- Estado Global ---
         let localItems = []; 
         let globalPendingSolicitacoes = []; 
         let myPersonalSolicitacoes = []; 
         let localSolicitacoesCompra = [];
-        let previousSolicitacoesState = new Map();
-        let previousCompraState = new Map();
-        let categorizedItems = {};
         let categoriesCache = null; 
-        
         let currentProfessor = null;
         let activeItemRow = null;
-        let unsubscribeItems = null;
-        let unsubscribePending = null;
-        let unsubscribeMyHistory = null;
-        let unsubscribeSolicitacoesCompra = null;
-        
-        // New: Selected dates (with periods) for multi-request
-        let selectedDates = []; // Format: [{ date: '2023-01-01', period: 'Manhã' }, ...]
-        
-        // Kit Editing State
+        let selectedDates = []; 
         let editingKitId = null;
-        let localKits = []; // Cache to facilitate editing
+        let localKits = [];
 
-        // DOM Elements
+        // --- Listeners do Firebase (para detach) ---
+        let unsubscribeItems, unsubscribePending, unsubscribeMyHistory, unsubscribeSolicitacoesCompra;
+        let unsubscribeProfMessages, unsubscribeProfMeta; // Chat Listeners
+
+        // --- Elementos DOM ---
         const matriculaInput = document.getElementById('solicitante-matricula');
         const form = document.getElementById('form-solicitacao');
         const tabsContainer = document.querySelector('.tabs-container');
         const professorInfoDiv = document.getElementById('professor-info');
         const professorNameDisplay = document.getElementById('professor-name-display');
         const matriculaError = document.getElementById('matricula-error');
-        const matriculaFeedbackIcon = document.getElementById('matricula-feedback-icon');
         const acessarBtn = document.getElementById('acessar-btn');
         const trocarUsuarioBtn = document.getElementById('trocar-usuario-btn');
         const dataAgendamentoInput = document.getElementById('data-agendamento');
         const addDateBtn = document.getElementById('add-date-btn');
         const selectedDatesContainer = document.getElementById('selected-dates-container');
         const systemObsReadonly = document.getElementById('system-obs-readonly');
+        const cacheStatusIndicator = document.getElementById('cache-status-indicator');
         
-        // Kit Form Elements
-        const createKitTitle = document.getElementById('create-kit-title');
-        const createKitForm = document.getElementById('create-kit-form');
-        const kitNameInput = document.getElementById('kit-name');
-        const kitItemsList = document.getElementById('kit-itens-list');
-        const submitKitBtn = document.getElementById('submit-kit-btn');
-        const cancelEditKitBtn = document.getElementById('cancel-edit-kit-btn');
-        
-        // Custom Dropdown Elements
+        // Chat DOM
+        const chatTrigger = document.getElementById('prof-chat-trigger');
+        const chatWindow = document.getElementById('prof-chat-window');
+        const closeChatBtn = document.getElementById('close-prof-chat');
+        const chatBadge = document.getElementById('prof-chat-badge');
+        const chatMessagesArea = document.getElementById('prof-chat-messages');
+        const chatForm = document.getElementById('prof-chat-form');
+        const chatInput = document.getElementById('prof-chat-input');
+
+        // Dropdown
         const periodoDropdownBtn = document.getElementById('periodo-dropdown-btn');
         const periodoDropdownContent = document.getElementById('periodo-dropdown-content');
         const periodoSelectedText = document.getElementById('periodo-selected-text');
         const periodosContainer = document.getElementById('periodos-container');
 
-        // Modals
-        const itemModal = document.getElementById('item-selection-modal');
-        const closeModalBtn = document.getElementById('close-modal-btn');
-        const modalItemsContainer = document.getElementById('modal-items-container');
-        const itemSearchInput = document.getElementById('item-search-input');
-        const successModal = document.getElementById('success-modal');
-        const confirmModal = document.getElementById('confirm-modal');
-        const statusUpdateModal = document.getElementById('status-update-modal');
+        // --- GERENCIAMENTO DE CACHE ---
 
-        function attachRealtimeListeners() {
+        async function loadItemsFromCacheOrDB(force = false) {
+            cacheStatusIndicator.innerText = "Verificando Itens...";
+            
+            if (!force) {
+                const cached = localStorage.getItem(ITEMS_CACHE_KEY);
+                if (cached) {
+                    try {
+                        const data = JSON.parse(cached);
+                        const age = Date.now() - data.timestamp;
+                        if (age < CACHE_EXPIRY_MS) {
+                            localItems = data.items;
+                            cacheStatusIndicator.innerText = "Usando Cache Local (Itens)";
+                            cacheStatusIndicator.className = "text-green-500 font-bold";
+                            revalidateAllRows();
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("Cache inválido", e);
+                    }
+                }
+            }
+
+            // Se chegou aqui, precisa baixar
+            cacheStatusIndicator.innerText = "Baixando Itens do DB...";
+            cacheStatusIndicator.className = "text-yellow-500 font-bold";
+            try {
+                const snap = await getDocs(getCollectionRef('itens'));
+                localItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Salva no Cache
+                localStorage.setItem(ITEMS_CACHE_KEY, JSON.stringify({
+                    timestamp: Date.now(),
+                    items: localItems
+                }));
+                
+                cacheStatusIndicator.innerText = "Itens Atualizados";
+                cacheStatusIndicator.className = "text-blue-500";
+                revalidateAllRows();
+            } catch (e) {
+                console.error("Erro ao baixar itens", e);
+                cacheStatusIndicator.innerText = "Erro ao baixar itens";
+            }
+        }
+
+        async function loadCategoriesFromCacheOrDB(force = false) {
+            // Verifica memória primeiro
+            if (categoriesCache && !force) return;
+
+            // Verifica LocalStorage
+            if (!force) {
+                const cached = localStorage.getItem(CATS_CACHE_KEY);
+                if (cached) {
+                    try {
+                        const data = JSON.parse(cached);
+                        const age = Date.now() - data.timestamp;
+                        if (age < CACHE_EXPIRY_MS) {
+                            categoriesCache = new Map(data.categories); // Map suporta array de pares [key, val]
+                            return;
+                        }
+                    } catch (e) { console.error("Cache cat invalido", e); }
+                }
+            }
+
+            // Baixa do DB
+            try {
+                const snap = await getDocs(getCollectionRef('categories'));
+                const catsArray = snap.docs.map(d => [d.id, d.data().name]);
+                categoriesCache = new Map(catsArray);
+                
+                localStorage.setItem(CATS_CACHE_KEY, JSON.stringify({
+                    timestamp: Date.now(),
+                    categories: catsArray // Salva como array pq JSON não suporta Map direto
+                }));
+            } catch (e) { console.error(e); }
+        }
+
+        // --- FUNÇÕES DE INICIALIZAÇÃO ---
+
+        async function initProfessorChat(professor) {
+            const chatId = `chat_${professor.id}`; 
+            const chatRef = doc(getCollectionRef('chats'), chatId);
+            
+            // Exibir o botão flutuante
+            chatTrigger.classList.remove('hidden');
+
+            // 1. Criar/Atualizar documento do chat
+            try {
+                await setDoc(chatRef, {
+                    professorId: professor.id,
+                    professorName: professor.name,
+                    lastUpdated: serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Chat init error", e);
+            }
+
+            // 2. Escutar Badge (não lidas)
+            unsubscribeProfMeta = onSnapshot(chatRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const unread = data.unreadProfessor || 0;
+                    
+                    if (unread > 0) {
+                        chatBadge.textContent = unread;
+                        chatBadge.classList.remove('hidden');
+                        // Animar se fechado
+                        if (!chatWindow.classList.contains('visible-chat')) {
+                            chatTrigger.classList.add('animate-bounce');
+                            setTimeout(() => chatTrigger.classList.remove('animate-bounce'), 2000);
+                        }
+                    } else {
+                        chatBadge.classList.add('hidden');
+                    }
+                }
+            });
+
+            // 3. Escutar Mensagens (LIMITADO A 10 PARA REDUZIR LEITURAS)
+            const messagesRef = collection(chatRef, 'messages');
+            const qMessages = query(messagesRef, orderBy('timestamp', 'asc'), limit(10));
+            
+            unsubscribeProfMessages = onSnapshot(qMessages, (snapshot) => {
+                // Limpa área (mantém msg padrão se quiser, aqui vamos reconstruir)
+                chatMessagesArea.innerHTML = '';
+                
+                // Mensagem de sistema fixa no topo
+                const welcomeDiv = document.createElement('div');
+                welcomeDiv.className = 'flex w-full justify-start';
+                welcomeDiv.innerHTML = `<div class="chat-message-bubble chat-bubble-other"><p>Olá ${professor.name.split(' ')[0]}! Em que podemos ajudar?</p></div>`;
+                chatMessagesArea.appendChild(welcomeDiv);
+
+                snapshot.docs.forEach(doc => {
+                    const msg = doc.data();
+                    const isMe = msg.senderRole === 'professor';
+                    
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'}`;
+                    
+                    const timeString = msg.timestamp ? msg.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
+
+                    msgDiv.innerHTML = `
+                        <div class="chat-message-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-other'}">
+                            <p>${msg.text}</p>
+                            <span class="text-[9px] ${isMe ? 'text-blue-100' : 'text-gray-400'} block text-right mt-1">${timeString}</span>
+                        </div>
+                    `;
+                    chatMessagesArea.appendChild(msgDiv);
+                });
+                
+                // Auto scroll
+                chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight;
+            });
+        }
+
+        // --- LÓGICA DE LOGIN ---
+
+        acessarBtn.addEventListener('click', async () => {
+            const matricula = matriculaInput.value.trim();
+            if (!matricula) return;
+
+            acessarBtn.disabled = true;
+            acessarBtn.textContent = '...';
+
+            const q = query(getCollectionRef('professores'), where("matricula", "==", matricula));
+            
+            try {
+                // Aqui chamamos nosso getDocs monitorado
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    const docSnap = querySnapshot.docs[0];
+                    const professor = { id: docSnap.id, ...docSnap.data() };
+                    
+                    currentProfessor = professor;
+                    
+                    // UI Updates
+                    professorNameDisplay.textContent = professor.name;
+                    professorInfoDiv.classList.remove('hidden');
+                    tabsContainer.classList.add('active');
+                    document.getElementById('tab-content-solicitacao').classList.add('active');
+                    acessarBtn.classList.add('hidden');
+                    trocarUsuarioBtn.classList.remove('hidden');
+                    matriculaInput.disabled = true;
+                    matriculaError.classList.add('hidden');
+
+                    // Inicia funcionalidades
+                    attachRealtimeListeners();
+                    renderKits();
+                    // initProfessorChat(professor); // Chat desativado temporariamente
+
+                } else {
+                    matriculaError.textContent = 'Matrícula não encontrada.';
+                    matriculaError.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Erro no login:", error);
+                alert("Erro de conexão.");
+            } finally {
+                acessarBtn.disabled = false;
+                acessarBtn.textContent = 'Acessar';
+            }
+        });
+
+        trocarUsuarioBtn.addEventListener('click', () => {
+            // Limpa listeners
             if (unsubscribeItems) unsubscribeItems(); 
             if (unsubscribePending) unsubscribePending();
             if (unsubscribeMyHistory) unsubscribeMyHistory();
             if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
+            if (unsubscribeProfMessages) unsubscribeProfMessages();
+            if (unsubscribeProfMeta) unsubscribeProfMeta();
+            
+            location.reload();
+        });
 
-            unsubscribeItems = onSnapshot(getCollectionRef('itens'), (snapshot) => {
-                countRead(snapshot.docChanges().length);
-                localItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // Recalcular validações se itens mudarem
-                revalidateAllRows();
-            }, (error) => console.error("Erro ao ouvir itens:", error));
+        // --- LÓGICA DO CHAT (UI) ---
 
+        chatTrigger.addEventListener('click', async () => {
+            // Abre Janela
+            chatWindow.classList.remove('hidden-chat');
+            chatWindow.classList.add('visible-chat');
+            chatTrigger.classList.add('hidden'); // Esconde o botão flutuante
+
+            // Zera badge no banco
+            if (currentProfessor) {
+                const chatId = `chat_${currentProfessor.id}`;
+                await updateDoc(doc(getCollectionRef('chats'), chatId), { unreadProfessor: 0 });
+            }
+            chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight;
+        });
+
+        closeChatBtn.addEventListener('click', () => {
+            // Fecha Janela
+            chatWindow.classList.remove('visible-chat');
+            chatWindow.classList.add('hidden-chat');
+            // Mostra botão de volta após transição
+            setTimeout(() => chatTrigger.classList.remove('hidden'), 300);
+        });
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text || !currentProfessor) return;
+
+            chatInput.value = '';
+            
+            const chatId = `chat_${currentProfessor.id}`;
+            const chatRef = doc(getCollectionRef('chats'), chatId);
+            const messagesRef = collection(chatRef, 'messages');
+
+            try {
+                // Adiciona mensagem (Monitorado)
+                await addDoc(messagesRef, {
+                    text,
+                    senderId: currentProfessor.id,
+                    senderName: currentProfessor.name,
+                    senderRole: 'professor',
+                    timestamp: serverTimestamp()
+                });
+
+                // Atualiza metadados do chat para o Admin ver (Monitorado)
+                await updateDoc(chatRef, {
+                    lastMessage: text,
+                    lastMessageTime: serverTimestamp(),
+                    unreadAdmin: increment(1)
+                });
+            } catch(err) {
+                console.error("Erro envio msg", err);
+            }
+        });
+
+        // --- LÓGICA DE SOLICITAÇÃO E ESTOQUE ---
+
+        function attachRealtimeListeners() {
+            loadItemsFromCacheOrDB(); // Carrega itens com cache de 1 semana
+
+            // Mantemos PENDENTES em realtime para evitar conflito de reserva (importante)
             const qPending = query(getCollectionRef('solicitacoes'), where("status", "==", "Pendente"));
             unsubscribePending = onSnapshot(qPending, (snapshot) => {
-                countRead(snapshot.docChanges().length);
                 globalPendingSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // Recalcular validações se houver novas reservas
                 revalidateAllRows();
-            }, (error) => console.error("Erro ao ouvir pendentes:", error));
+            });
 
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
             unsubscribeMyHistory = onSnapshot(qMyHistory, (snapshot) => {
-                countRead(snapshot.docChanges().length);
                 const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
+                // Verifica mudanças de status para notificar
                 newSolicitacoes.forEach(sol => {
-                    const oldStatus = previousSolicitacoesState.get(sol.id);
-                    if (oldStatus && oldStatus !== sol.status) {
-                        if (oldStatus === 'Pendente' && sol.status === 'Concluída') {
-                            showStatusUpdateModal(`Seu pedido para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi aceito e está sendo separado!`, 'success');
-                        } else if (oldStatus === 'Pendente' && sol.status === 'Rejeitada') {
-                            showStatusUpdateModal(`Sua solicitação para ${new Date(sol.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR')} foi recusada.`, 'error');
+                    const foundOld = myPersonalSolicitacoes.find(old => old.id === sol.id);
+                    if (foundOld && foundOld.status !== sol.status) {
+                        if (foundOld.status === 'Pendente' && sol.status === 'Concluída') {
+                            showStatusUpdateModal(`Pedido para ${new Date(sol.dataAgendamento+'T00:00:00').toLocaleDateString('pt-BR')} aceito!`, 'success');
+                        } else if (foundOld.status === 'Pendente' && sol.status === 'Rejeitada') {
+                            showStatusUpdateModal(`Pedido para ${new Date(sol.dataAgendamento+'T00:00:00').toLocaleDateString('pt-BR')} recusado.`, 'error');
                         }
                     }
                 });
-                
-                previousSolicitacoesState.clear();
-                newSolicitacoes.forEach(sol => previousSolicitacoesState.set(sol.id, sol.status));
                 
                 myPersonalSolicitacoes = newSolicitacoes;
                 displayHistory();
-            }, (error) => console.error("Erro ao ouvir histórico:", error));
-
-
-            // Listener de Compras mantido apenas para o HISTÓRICO, o formulário de envio está desativado
-            const qCompras = query(getCollectionRef('solicitacoes_compra'), where("solicitanteId", "==", currentProfessor.id));
-            unsubscribeSolicitacoesCompra = onSnapshot(qCompras, (snapshot) => {
-                countRead(snapshot.docChanges().length);
-                const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                newSolicitacoes.forEach(sol => {
-                    const oldStatus = previousCompraState.get(sol.id);
-                    if (oldStatus && oldStatus !== sol.status) {
-                        if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Aprovado') {
-                            showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi APROVADO pelo supervisor!`, 'success');
-                        } else if (oldStatus === 'Pendente de Aprovação' && sol.status === 'Rejeitado') {
-                            showStatusUpdateModal(`Seu pedido de compra para "${sol.itemName}" foi REJEITADO pelo supervisor.`, 'error');
-                        }
-                    }
-                });
-
-                previousCompraState.clear();
-                newSolicitacoes.forEach(sol => previousCompraState.set(sol.id, sol.status));
-                localSolicitacoesCompra = newSolicitacoes;
-                displayHistory();
-            }, (error) => console.error("Erro ao ouvir compras:", error));
+            });
         }
 
-        // --- Dropdown Logic ---
-        
-        function toggleDropdown() {
-            periodoDropdownContent.classList.toggle('hidden');
-            const icon = periodoDropdownBtn.querySelector('i');
-            if (periodoDropdownContent.classList.contains('hidden')) {
-                icon.classList.remove('rotate-180');
-            } else {
-                icon.classList.add('rotate-180');
-                icon.classList.add('transition-transform');
-            }
-        }
-
-        function closeDropdown() {
-            periodoDropdownContent.classList.add('hidden');
-            const icon = periodoDropdownBtn.querySelector('i');
-            icon.classList.remove('rotate-180');
-        }
-
-        periodoDropdownBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleDropdown();
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!periodoDropdownContent.contains(e.target) && !periodoDropdownBtn.contains(e.target)) {
-                closeDropdown();
-            }
-        });
-
-        // Function to update the button text based on selection
-        function updateSelectedPeriodsText() {
-            const selected = getSelectedPeriods();
-            if (selected.length === 0) {
-                periodoSelectedText.textContent = "Selecione...";
-            } else if (selected.includes("Integral")) {
-                periodoSelectedText.textContent = "Integral (Dia Todo)";
-            } else {
-                periodoSelectedText.textContent = selected.join(', ');
-            }
-        }
+        // --- VALIDATION LOGIC ---
 
         function getSelectedPeriods() {
-            const checkboxes = periodosContainer.querySelectorAll('input[name="periodo"]:checked');
-            return Array.from(checkboxes).map(cb => cb.value);
+            return Array.from(periodosContainer.querySelectorAll('input[name="periodo"]:checked')).map(cb => cb.value);
         }
 
-        // Logic to ensure "Integral" behaves exclusively
-        periodosContainer.addEventListener('change', (e) => {
-            if (e.target.name === 'periodo') {
-                const val = e.target.value;
-                const isChecked = e.target.checked;
-                
-                if (val === 'Integral' && isChecked) {
-                    // Uncheck others
-                    periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
-                        if (cb.value !== 'Integral') cb.checked = false;
-                    });
-                } else if (val !== 'Integral' && isChecked) {
-                    // Uncheck Integral
-                    const integralCb = periodosContainer.querySelector('input[value="Integral"]');
-                    if (integralCb) integralCb.checked = false;
-                }
-                
-                updateSelectedPeriodsText();
-                revalidateAllRows();
-                renderSystemObs();
-            }
-        });
-
-        // Função unificada para calcular estoque e quem está com o item
         function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
             const currentPhysicalStock = item.quantity || 0;
             let reservationsOnDate = 0;
-            const holders = new Set(); // Use Set para nomes únicos
+            const holders = new Set();
             
-            // Lógica de Interseção de Períodos
             for (const sol of globalPendingSolicitacoes) {
-                // Verifica data exata
                 if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
-                    
                     const solPeriod = sol.periodo || 'Integral'; 
                     let isConflict = false;
                     
-                    if (targetPeriod === 'Integral') {
-                        isConflict = true; 
-                    } else if (solPeriod === 'Integral') {
-                        isConflict = true;
-                    } else if (targetPeriod === solPeriod) {
+                    if (targetPeriod === 'Integral' || solPeriod === 'Integral' || targetPeriod === solPeriod) {
                         isConflict = true;
                     }
 
@@ -564,10 +854,7 @@
                         for (const solItem of sol.itensSolicitados) {
                             if (solItem.itemId === item.id) {
                                 reservationsOnDate += solItem.quantidade;
-                                // Adiciona o nome do solicitante à lista de "quem está com o item"
-                                if(sol.solicitanteName) {
-                                    holders.add(sol.solicitanteName);
-                                }
+                                if(sol.solicitanteName) holders.add(sol.solicitanteName);
                             }
                         }
                     }
@@ -580,10 +867,6 @@
             };
         }
 
-        function getAvailableStock(item, targetDateStr, targetPeriod) {
-            return calculateStockAndHolders(item, targetDateStr, targetPeriod).availableStock;
-        }
-
         function handleStockValidation(rowDiv) {
             const itemId = rowDiv.dataset.itemId;
             if (!itemId) return;
@@ -591,9 +874,7 @@
             const item = localItems.find(i => i.id === itemId);
             if (!item) return;
             
-            // Context check: If it's a Kit Creation row, validate against physical stock only
             const isKitCreation = rowDiv.closest('#kit-itens-list');
-
             const quantityInput = rowDiv.querySelector('.item-quantity-input');
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
@@ -621,14 +902,13 @@
                 return;
             }
 
-            // Check availability for ALL selected periods
             let hasError = false;
             let errorMsg = "Disp: ";
             let details = [];
 
             selectedPeriods.forEach(period => {
-                const avail = getAvailableStock(item, targetDate, period);
-                const shortPeriod = period.substring(0, 1); // M, T, N, I
+                const avail = calculateStockAndHolders(item, targetDate, period).availableStock;
+                const shortPeriod = period.substring(0, 1);
                 details.push(`${avail} (${shortPeriod})`);
                 
                 if (!isNaN(requestedQuantity) && requestedQuantity > avail) {
@@ -646,34 +926,31 @@
             }
         }
 
-        // Função auxiliar para revalidar todas as linhas quando data/periodo muda
         function revalidateAllRows() {
-            document.querySelectorAll('#itens-list .item-row').forEach(row => {
-                handleStockValidation(row);
-            });
+            document.querySelectorAll('#itens-list .item-row').forEach(row => handleStockValidation(row));
         }
+
+        // --- FORMULARIO LOGIC ---
 
         function createItemRow(containerId, itemData = null) {
             const container = document.getElementById(containerId);
             const div = document.createElement('div');
-            div.className = 'item-row flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-white rounded-lg border';
+            div.className = 'item-row flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-white rounded-lg border shadow-sm';
             
-            const itemName = itemData ? itemData.itemName : 'Clique para selecionar um item...';
+            const itemName = itemData ? itemData.itemName : 'Toque para selecionar...';
             const itemQuantity = itemData ? itemData.quantidade : '';
-            if (itemData?.itemId) {
-                div.dataset.itemId = itemData.itemId;
-            }
+            if (itemData?.itemId) div.dataset.itemId = itemData.itemId;
 
             div.innerHTML = `
-                <div class="flex-grow">
-                    <button type="button" class="item-select-btn w-full p-2 border border-gray-300 rounded-md text-left ${itemData ? 'text-gray-800' : 'text-gray-400'}">
+                <div class="flex-grow relative">
+                    <button type="button" class="item-select-btn w-full p-3 border border-gray-300 rounded-md text-left ${itemData ? 'text-gray-800 font-medium' : 'text-gray-400 bg-gray-50'} hover:border-blue-400 transition-colors">
                         ${itemName}
                     </button>
                     <p class="error-message text-red-600 text-xs font-semibold mt-1 ml-1 hidden"></p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input type="number" class="item-quantity-input w-24 p-2 border-gray-300 rounded-md" placeholder="Qtd" min="1" value="${itemQuantity}">
-                    <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 text-lg p-2" title="Remover Item">
+                    <input type="number" class="item-quantity-input w-24 p-3 border-gray-300 rounded-md text-center font-bold" placeholder="Qtd" min="1" value="${itemQuantity}">
+                    <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 text-xl p-2 transition-transform hover:scale-110" title="Remover">
                         <i class="fas fa-minus-circle"></i>
                     </button>
                 </div>
@@ -689,853 +966,493 @@
             if(itemData) handleStockValidation(div);
         }
 
-        async function openItemModal() {
-            modalItemsContainer.innerHTML = '';
-            categorizedItems = {}; 
-            
-            // Check Context: Is this for Kit Creation?
-            const isKitCreation = activeItemRow && activeItemRow.closest('#kit-itens-list');
+        // --- ITEM SELECTION MODAL ---
 
+        async function openItemModal() {
+            const modalContainer = document.getElementById('modal-items-container');
+            const searchInput = document.getElementById('item-search-input');
+            const modal = document.getElementById('item-selection-modal');
+            
+            modalContainer.innerHTML = '';
+            const isKitCreation = activeItemRow && activeItemRow.closest('#kit-itens-list');
             const targetDate = dataAgendamentoInput.value;
             const selectedPeriods = getSelectedPeriods();
-            const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã']; 
+            const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã'];
 
-            if (!categoriesCache) {
-                categoriesCache = new Map();
-                try {
-                    const categoriesSnapshot = await getDocs(getCollectionRef('categories'));
-                    countRead(categoriesSnapshot.size);
-                    categoriesSnapshot.forEach(doc => {
-                        categoriesCache.set(doc.id, doc.data().name);
-                    });
-                } catch (error) {
-                    console.error("Erro ao carregar categorias no modal:", error);
-                }
-            }
-            const categoriesMap = categoriesCache;
+            // Carrega categorias (via Cache ou DB)
+            await loadCategoriesFromCacheOrDB();
 
+            const categorizedItems = {};
+            
             localItems.forEach(item => {
                 let minAvail = 9999;
-                let allHolders = new Set();
+                let holdersSet = new Set();
                 
                 if (isKitCreation) {
-                    // For Kit Creation: Ignore date reservations, use physical stock
                     minAvail = item.quantity || 0;
                 } else {
-                    // For Request: Calculate based on reservations
                     targetPeriodForModal.forEach(p => {
                         const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
                         if (availableStock < minAvail) minAvail = availableStock;
-                        holders.forEach(h => allHolders.add(h));
+                        holders.forEach(h => holdersSet.add(h));
                     });
                 }
-                
-                const holdersList = Array.from(allHolders);
 
-                const categoryName = categoriesMap.get(item.categoryId) || 'Outros';
-                if (!categorizedItems[categoryName]) {
-                    categorizedItems[categoryName] = [];
-                }
-                categorizedItems[categoryName].push({ ...item, availableStock: minAvail, holders: holdersList });
+                const catName = categoriesCache.get(item.categoryId) || 'Outros';
+                if (!categorizedItems[catName]) categorizedItems[catName] = [];
+                categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
             });
 
-            const sortedCategories = Object.keys(categorizedItems).sort();
-            sortedCategories.forEach(category => {
+            Object.keys(categorizedItems).sort().forEach(cat => {
                 const details = document.createElement('details');
-                details.className = 'category-accordion bg-white rounded-lg border';
+                details.className = 'category-accordion bg-white rounded-lg border mb-2';
                 details.innerHTML = `
-                    <summary class="flex justify-between items-center p-3 font-semibold text-gray-700 hover:bg-gray-100">
-                        <span>${category}</span>
-                        <i class="fas fa-chevron-right chevron"></i>
+                    <summary class="flex justify-between items-center p-3 font-semibold text-gray-700 hover:bg-gray-100 cursor-pointer">
+                        <span>${cat}</span><i class="fas fa-chevron-right chevron"></i>
                     </summary>
-                    <div class="items-grid p-3 border-t grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"></div>
+                    <div class="items-grid p-3 border-t grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
                 `;
+                const grid = details.querySelector('.items-grid');
                 
-                const itemsGrid = details.querySelector('.items-grid');
-                categorizedItems[category].forEach(item => {
-                    const itemButton = document.createElement('button');
-                    itemButton.type = 'button';
-                    
+                categorizedItems[cat].forEach(item => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
                     const isUnavailable = item.availableStock <= 0;
                     
-                    if (isUnavailable) {
-                        // Estilo para item indisponível
-                        itemButton.className = `item-button text-left p-2 rounded-md bg-red-50 border border-red-200 opacity-80 cursor-not-allowed`;
-                        itemButton.disabled = true; // Desabilita o clique
-                        
-                        const holdersText = !isKitCreation && item.holders && item.holders.length > 0 
-                            ? `Com: ${item.holders.join(', ')}` 
-                            : 'Indisponível';
-                            
-                        itemButton.innerHTML = `
-                            <span class="font-semibold text-gray-500">${item.name}</span>
-                            <div class="flex flex-col mt-1">
-                                <span class="text-xs text-red-600 font-bold uppercase"><i class="fas fa-ban mr-1"></i>Esgotado</span>
-                                <span class="text-[10px] text-gray-600 truncate" title="${holdersText}">${holdersText}</span>
-                            </div>
-                        `;
-                    } else {
-                        // Estilo normal
-                        itemButton.className = `item-button text-left p-2 rounded-md bg-gray-50 hover:bg-blue-100 border border-gray-200`;
-                        itemButton.dataset.itemName = item.name;
-                        
-                        const stockLabel = isKitCreation ? 'Total Físico' : 'Disp';
+                    btn.className = `item-button text-left p-2 rounded-md border transition-all ${isUnavailable ? 'bg-red-50 border-red-100 opacity-60' : 'bg-gray-50 hover:bg-blue-50 hover:border-blue-300'}`;
+                    if(isUnavailable) btn.disabled = true;
 
-                        itemButton.innerHTML = `
-                            <span class="font-semibold text-gray-700">${item.name}</span>
-                            <div class="flex justify-between items-center">
-                                <span class="block text-xs text-gray-500">${stockLabel}: ${item.availableStock}</span>
-                            </div>
-                        `;
-                        itemButton.addEventListener('click', () => selectItemFromModal(item));
-                    }
+                    const stockText = isKitCreation ? 'Físico' : 'Disp';
+                    const holderText = !isKitCreation && item.holders.length > 0 ? `Com: ${item.holders[0]}` : '';
 
-                    itemsGrid.appendChild(itemButton);
-                });
-
-                modalItemsContainer.appendChild(details);
-            });
-
-            itemModal.classList.remove('hidden');
-            itemSearchInput.value = ''; 
-            itemSearchInput.focus();
-        }
-
-        function filterItems() {
-            const searchTerm = itemSearchInput.value.toLowerCase();
-            const categories = modalItemsContainer.querySelectorAll('.category-accordion');
-
-            categories.forEach(category => {
-                const categoryName = category.querySelector('summary span').textContent.toLowerCase();
-                const items = category.querySelectorAll('.item-button');
-                let hasVisibleItem = false;
-
-                items.forEach(item => {
-                    // Para itens desabilitados que podem não ter dataset.itemName no click, 
-                    // precisamos pegar o nome de dentro do span
-                    const nameElement = item.querySelector('span.font-semibold');
-                    const itemName = nameElement ? nameElement.textContent.toLowerCase() : '';
-                    
-                    if (itemName.includes(searchTerm)) {
-                        item.style.display = 'block';
-                        hasVisibleItem = true;
-                    } else {
-                        item.style.display = 'none';
-                    }
-                });
-
-                if (hasVisibleItem || categoryName.includes(searchTerm)) {
-                    category.style.display = 'block';
-                    if (searchTerm) {
-                        category.open = true;
-                    }
-                } else {
-                    category.style.display = 'none';
-                }
-            });
-        }
-        
-        function selectItemFromModal(item) {
-            if (activeItemRow) {
-                const btn = activeItemRow.querySelector('.item-select-btn');
-                btn.textContent = item.name;
-                btn.classList.remove('text-gray-400');
-                activeItemRow.dataset.itemId = item.id;
-                handleStockValidation(activeItemRow);
-
-                const container = activeItemRow.parentElement;
-                const containerId = container.id;
-                const isLastRow = activeItemRow === container.lastElementChild;
-
-                if (isLastRow && (containerId === 'itens-list' || containerId === 'kit-itens-list')) {
-                    createItemRow(containerId);
-                }
-            }
-            closeItemModal();
-        }
-
-        function closeItemModal() {
-            itemModal.classList.add('hidden');
-            activeItemRow = null;
-        }
-
-        function displayHistory() {
-            if (!currentProfessor) return;
-            const historyList = document.getElementById('history-list');
-            historyList.innerHTML = '';
-            
-            const professorSolicitations = myPersonalSolicitacoes.map(s => ({ ...s, type: 'retirada' }));
-            const professorCompraSolicitations = localSolicitacoesCompra.map(s => ({ ...s, type: 'compra' }));
-
-            const allHistory = [...professorSolicitations, ...professorCompraSolicitations];
-            allHistory.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-            
-            document.getElementById('history-placeholder').classList.toggle('hidden', allHistory.length > 0);
-            
-            allHistory.forEach(solicitacao => {
-                const div = document.createElement('div');
-                div.className = 'p-4 border rounded-lg bg-gray-50';
-                
-                if (solicitacao.type === 'retirada') {
-                    const statusClasses = { 'Pendente': 'bg-yellow-100 text-yellow-800', 'Concluída': 'bg-green-100 text-green-800', 'Rejeitada': 'bg-red-100 text-red-800', 'Cancelado': 'bg-gray-200 text-gray-700' };
-                    const dataAgendada = solicitacao.dataAgendamento ? new Date(solicitacao.dataAgendamento + 'T00:00:00').toLocaleDateString('pt-BR') : 'N/A';
-                    const dataPedido = solicitacao.timestamp ? solicitacao.timestamp.toDate().toLocaleDateString('pt-BR') : 'N/A';
-                    const periodo = solicitacao.periodo || 'Integral';
-                    
-                    const actionButtons = [];
-                    if (solicitacao.status === 'Pendente') {
-                        actionButtons.push(`<button data-id="${solicitacao.id}" data-type="retirada" class="cancel-solicitacao-btn text-xs bg-red-100 text-red-700 hover:bg-red-200 font-semibold py-1 px-2 rounded">Cancelar</button>`);
-                    }
-                    actionButtons.push(`<button data-solicitacao-items='${JSON.stringify(solicitacao.itensSolicitados)}' data-periodo="${periodo}" class="reutilizar-btn text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-1 px-2 rounded">Reutilizar Pedido</button>`);
-
-                    div.innerHTML = `
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-bold text-gray-700">Pedido de Material: ${dataPedido} <span class="font-normal text-gray-500">(Para: ${dataAgendada} - ${periodo})</span></p>
-                                <div class="text-xs text-gray-600 mt-2">
-                                    ${solicitacao.itensSolicitados.map(item => `<span>- ${item.quantidade}x ${item.itemName}</span>`).join('<br>')}
-                                </div>
-                            </div>
-                            <span class="text-xs font-bold px-2 py-1 rounded-full ${statusClasses[solicitacao.status] || ''}">${solicitacao.status}</span>
+                    btn.innerHTML = `
+                        <div class="flex justify-between w-full">
+                            <span class="font-semibold text-gray-700 text-sm">${item.name}</span>
+                            <span class="text-xs font-bold ${isUnavailable ? 'text-red-500' : 'text-green-600'}">${item.availableStock}</span>
                         </div>
-                        <div class="flex justify-end gap-2 mt-3">
-                            ${actionButtons.join('')}
-                        </div>`;
-                } else { 
-                    const statusClasses = { 
-                        'Pendente de Aprovação': 'bg-gray-200 text-gray-800',
-                        'Aprovado': 'bg-blue-100 text-blue-800',
-                        'Rejeitado': 'bg-red-100 text-red-800',
-                        'Em Análise': 'bg-yellow-100 text-yellow-800',
-                        'Comprado': 'bg-indigo-100 text-indigo-800',
-                        'Entregue': 'bg-green-100 text-green-800',
-                        'Cancelado': 'bg-gray-200 text-gray-700'
-                    };
-                    const dataPedido = solicitacao.timestamp ? solicitacao.timestamp.toDate().toLocaleDateString('pt-BR') : 'N/A';
-                    const cancelButton = solicitacao.status === 'Pendente de Aprovação' 
-                        ? `<button data-id="${solicitacao.id}" data-type="compra" class="cancel-solicitacao-btn ml-2 text-xs bg-red-100 text-red-700 hover:bg-red-200 font-semibold py-1 px-2 rounded">Cancelar</button>`
-                        : '';
-                    
-                    div.innerHTML = `
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-bold text-gray-700">Pedido de Compra: ${dataPedido}</p>
-                                <div class="text-xs text-gray-600 mt-2">
-                                    <p><b>Item:</b> ${solicitacao.itemName} (Qtd: ${solicitacao.quantidade})</p>
-                                    <p><b>Descrição:</b> ${solicitacao.itemDescricao}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center">
-                                <span class="text-xs font-bold px-2 py-1 rounded-full ${statusClasses[solicitacao.status] || ''}">${solicitacao.status}</span>
-                                ${cancelButton}
-                            </div>
-                        </div>`;
-                }
-                historyList.appendChild(div);
+                        <div class="flex justify-between mt-1">
+                            <span class="text-[10px] text-gray-500">${stockText}</span>
+                            ${isUnavailable ? `<span class="text-[10px] text-red-400 truncate max-w-[80px]">${holderText}</span>` : ''}
+                        </div>
+                    `;
+                    if(!isUnavailable) {
+                        btn.onclick = () => {
+                            if(activeItemRow) {
+                                const btnSelect = activeItemRow.querySelector('.item-select-btn');
+                                btnSelect.textContent = item.name;
+                                btnSelect.classList.remove('text-gray-400', 'bg-gray-50');
+                                btnSelect.classList.add('text-gray-800', 'font-medium');
+                                activeItemRow.dataset.itemId = item.id;
+                                handleStockValidation(activeItemRow);
+                                
+                                // Auto-create next row
+                                const container = activeItemRow.parentElement;
+                                if (activeItemRow === container.lastElementChild) createItemRow(container.id);
+                            }
+                            modal.classList.add('hidden');
+                        };
+                    }
+                    grid.appendChild(btn);
+                });
+                document.getElementById('modal-items-container').appendChild(details);
             });
+
+            modal.classList.remove('hidden');
+            searchInput.value = '';
+            searchInput.focus();
         }
 
-        function resetRequestForm() {
-            document.getElementById('observacao').value = '';
-            document.getElementById('itens-list').innerHTML = '';
-            const today = new Date().toISOString().split('T')[0];
-            dataAgendamentoInput.value = today;
-            dataAgendamentoInput.min = today;
-            
-            // Reset checkboxes
-            periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
-                cb.checked = (cb.value === 'Manhã');
-            });
-            updateSelectedPeriodsText();
-            
-            selectedDates = [];
-            renderSelectedDates();
-            
-            createItemRow('itens-list');
-        }
-        
-        // Multi-date handling functions
-        function renderSelectedDates() {
-            selectedDatesContainer.innerHTML = '';
-            selectedDates.forEach(dateObj => {
-                const dateStr = dateObj.date;
-                const periodStr = dateObj.period;
-                
-                const dateInstance = new Date(dateStr + 'T00:00:00');
-                const formattedDate = dateInstance.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                
-                const tag = document.createElement('div');
-                tag.className = 'date-tag bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1';
-                tag.innerHTML = `
-                    <span>${formattedDate} (${periodStr})</span>
-                    <button type="button" class="hover:text-red-500 focus:outline-none" aria-label="Remover data">
-                        &times;
-                    </button>
-                `;
-                
-                tag.querySelector('button').addEventListener('click', () => {
-                    // Remove exact match of date AND period
-                    selectedDates = selectedDates.filter(d => !(d.date === dateStr && d.period === periodStr));
-                    renderSelectedDates();
+        document.getElementById('item-search-input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            document.querySelectorAll('.category-accordion').forEach(acc => {
+                let hasItem = false;
+                acc.querySelectorAll('.item-button').forEach(btn => {
+                    const name = btn.querySelector('.font-semibold').textContent.toLowerCase();
+                    if(name.includes(term)) { btn.style.display = 'block'; hasItem = true; }
+                    else btn.style.display = 'none';
                 });
-                
-                selectedDatesContainer.appendChild(tag);
+                acc.style.display = hasItem ? 'block' : 'none';
+                if(term && hasItem) acc.open = true;
             });
-            
-            // Atualiza também o resumo da observação
-            renderSystemObs();
-        }
-        
-        // Função para renderizar o resumo de agendamento na observação
-        function renderSystemObs() {
-            let text = "Agendamento para:\n";
-            
-            // Determina quais datas mostrar: a lista de selecionados OU o input atual (como no envio)
-            let datesToShow = [];
-            if (selectedDates.length > 0) {
-                datesToShow = selectedDates;
-            } else {
-                const currentPeriods = getSelectedPeriods();
-                if (dataAgendamentoInput.value && currentPeriods.length > 0) {
-                    currentPeriods.forEach(p => {
-                        datesToShow.push({ date: dataAgendamentoInput.value, period: p });
-                    });
-                }
-            }
+        });
 
-            if (datesToShow.length === 0) {
-                text += "(Selecione uma data)";
-            } else {
-                datesToShow.forEach(d => {
-                    const dateObj = new Date(d.date + 'T00:00:00');
-                    const formatted = dateObj.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
-                    text += `- ${formatted} (${d.period})\n`;
-                });
-            }
-            systemObsReadonly.textContent = text;
-        }
-        
+        // --- SUBMIT E GESTÃO DE DATAS ---
+
         addDateBtn.addEventListener('click', () => {
             const dateVal = dataAgendamentoInput.value;
             const selectedPeriods = getSelectedPeriods();
+            if (!dateVal || selectedPeriods.length === 0) return alert('Selecione data e período.');
             
-            if (!dateVal) return;
-            if (selectedPeriods.length === 0) {
-                alert('Selecione pelo menos um período.');
-                return;
-            }
-            
-            let addedCount = 0;
-            selectedPeriods.forEach(periodVal => {
-                // Check if combination already exists
-                const exists = selectedDates.some(d => d.date === dateVal && d.period === periodVal);
-                
-                if (!exists) {
-                    selectedDates.push({ date: dateVal, period: periodVal });
-                    addedCount++;
+            let added = 0;
+            selectedPeriods.forEach(p => {
+                if (!selectedDates.some(d => d.date === dateVal && d.period === p)) {
+                    selectedDates.push({ date: dateVal, period: p });
+                    added++;
                 }
             });
             
-            if (addedCount > 0) {
-                // Sort chronologically then by period
-                selectedDates.sort((a, b) => {
-                    if (a.date !== b.date) return a.date.localeCompare(b.date);
-                    return a.period.localeCompare(b.period);
-                });
-                renderSelectedDates();
-                // Opcional: Feedback visual ao adicionar
-                addDateBtn.classList.add('bg-green-100', 'text-green-700');
-                setTimeout(() => {
-                    addDateBtn.classList.remove('bg-green-100', 'text-green-700');
-                }, 300);
-            } else {
-                alert('Esta data e período já foram adicionados à lista.');
+            if (added > 0) renderSelectedDates();
+            else alert('Data já adicionada.');
+        });
+
+        function renderSelectedDates() {
+            selectedDatesContainer.innerHTML = '';
+            // Sort
+            selectedDates.sort((a,b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+            
+            selectedDates.forEach(d => {
+                const dateFmt = new Date(d.date+'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+                const tag = document.createElement('div');
+                tag.className = 'date-tag bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-2';
+                tag.innerHTML = `<span>${dateFmt} - ${d.period}</span><button type="button" class="hover:text-red-600">&times;</button>`;
+                tag.querySelector('button').onclick = () => {
+                    selectedDates = selectedDates.filter(x => !(x.date === d.date && x.period === d.period));
+                    renderSelectedDates();
+                };
+                selectedDatesContainer.appendChild(tag);
+            });
+            renderSystemObs();
+        }
+
+        function renderSystemObs() {
+            let text = "Agendamento:\n";
+            let dates = selectedDates.length > 0 ? selectedDates : [];
+            
+            if(dates.length === 0 && dataAgendamentoInput.value) {
+                getSelectedPeriods().forEach(p => dates.push({date: dataAgendamentoInput.value, period: p}));
+            }
+
+            if(dates.length === 0) text += "(Selecione data/período)";
+            else dates.forEach(d => {
+                const fmt = new Date(d.date+'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+                text += `- ${fmt} (${d.period})\n`;
+            });
+            systemObsReadonly.innerText = text;
+        }
+
+        // Logic for Dropdown
+        periodoDropdownBtn.addEventListener('click', (e) => { e.stopPropagation(); periodoDropdownContent.classList.toggle('hidden'); });
+        document.addEventListener('click', (e) => { if(!periodoDropdownContent.contains(e.target) && !periodoDropdownBtn.contains(e.target)) periodoDropdownContent.classList.add('hidden'); });
+        
+        periodosContainer.addEventListener('change', (e) => {
+            if(e.target.name === 'periodo') {
+                const val = e.target.value;
+                const checked = e.target.checked;
+                if(val === 'Integral' && checked) periodosContainer.querySelectorAll('input:not([value="Integral"])').forEach(c => c.checked = false);
+                else if(val !== 'Integral' && checked) {
+                    const integ = periodosContainer.querySelector('input[value="Integral"]');
+                    if(integ) integ.checked = false;
+                }
+                
+                const sels = getSelectedPeriods();
+                periodoSelectedText.textContent = sels.length === 0 ? "Selecione..." : (sels.includes('Integral') ? "Integral" : sels.join(', '));
+                revalidateAllRows();
+                renderSystemObs();
             }
         });
 
-        function resetKitForm() {
-            createKitForm.reset();
-            kitItemsList.innerHTML = '';
-            createItemRow('kit-itens-list');
-            
-            // Reset Edit Mode
-            editingKitId = null;
-            createKitTitle.textContent = "Criar Novo Kit";
-            submitKitBtn.textContent = "Salvar Kit";
-            submitKitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-            submitKitBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-            cancelEditKitBtn.classList.add('hidden');
-        }
-        
-        function startEditingKit(kit) {
-            editingKitId = kit.id;
-            
-            // Scroll to form
-            createKitForm.scrollIntoView({ behavior: 'smooth' });
-            
-            // Populate Fields
-            kitNameInput.value = kit.kitName;
-            
-            // Populate Items
-            kitItemsList.innerHTML = '';
-            if (kit.items && kit.items.length > 0) {
-                kit.items.forEach(item => {
-                    createItemRow('kit-itens-list', item);
-                });
-            }
-            createItemRow('kit-itens-list'); // Add empty row
-            
-            // Change UI
-            createKitTitle.textContent = "Editando Kit";
-            submitKitBtn.textContent = "Atualizar Kit";
-            submitKitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-            submitKitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-            cancelEditKitBtn.classList.remove('hidden');
-        }
-        
-        cancelEditKitBtn.addEventListener('click', resetKitForm);
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
 
-        function showSuccessModal(message, callback) {
-            document.getElementById('success-message').textContent = message;
-            successModal.classList.remove('hidden');
-            const okBtn = document.getElementById('success-ok-btn');
-            const newOkBtn = okBtn.cloneNode(true);
-            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-            newOkBtn.addEventListener('click', () => {
-                successModal.classList.add('hidden');
-                if (callback) callback();
+            // Datas
+            let targets = selectedDates.length > 0 ? selectedDates : [];
+            if(targets.length === 0) {
+                const d = dataAgendamentoInput.value;
+                const ps = getSelectedPeriods();
+                if(d && ps.length > 0) ps.forEach(p => targets.push({date: d, period: p}));
+            }
+
+            if(targets.length === 0) {
+                alert('Defina as datas.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
+            }
+
+            // Itens
+            const items = [];
+            document.querySelectorAll('#itens-list .item-row').forEach(row => {
+                const id = row.dataset.itemId;
+                const q = parseInt(row.querySelector('.item-quantity-input').value);
+                if(id && q > 0) {
+                    const item = localItems.find(i => i.id === id);
+                    if(item) items.push({ itemId: id, itemName: item.name, quantidade: q, _stock: item });
+                }
             });
-        }
 
-        function showConfirmModal(message, onConfirm) {
-            document.getElementById('confirm-message').textContent = message;
-            confirmModal.classList.remove('hidden');
-            const okBtn = document.getElementById('confirm-ok-btn');
-            const cancelBtn = document.getElementById('confirm-cancel-btn');
-            
-            const newOkBtn = okBtn.cloneNode(true);
-            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-
-            newOkBtn.onclick = () => {
-                confirmModal.classList.add('hidden');
-                onConfirm();
-            };
-            cancelBtn.onclick = () => confirmModal.classList.add('hidden');
-        }
-
-        function showStatusUpdateModal(message, type) {
-            const iconContainer = document.getElementById('status-update-icon-container');
-            const okBtn = document.getElementById('status-update-ok-btn');
-            
-            if (type === 'success') {
-                iconContainer.innerHTML = `<i class="fas fa-check-circle text-4xl text-green-600"></i>`;
-                iconContainer.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-5';
-                okBtn.className = 'w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg';
-            } else { // error
-                iconContainer.innerHTML = `<i class="fas fa-times-circle text-4xl text-red-600"></i>`;
-                iconContainer.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-5';
-                okBtn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg';
+            if(items.length === 0) {
+                alert('Adicione itens.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
             }
-            
-            document.getElementById('status-update-message').textContent = message;
-            statusUpdateModal.classList.remove('hidden');
-        }
 
-        async function renderKits() {
-            if (!currentProfessor) return;
-            const kitsList = document.getElementById('kits-list');
-            kitsList.innerHTML = '';
-            const q = query(getCollectionRef('kits'), where("professorId", "==", currentProfessor.id));
-            const querySnapshot = await getDocs(q);
-            
-            // Monitor: Contagem de leitura dos Kits
-            countRead(querySnapshot.size);
+            // Validar Estoque
+            for(const t of targets) {
+                for(const i of items) {
+                    const avail = calculateStockAndHolders(i._stock, t.date, t.period).availableStock;
+                    if(i.quantidade > avail) {
+                        alert(`Estoque insuficiente de "${i.itemName}" para ${t.date} (${t.period}). Disp: ${avail}`);
+                        btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
+                    }
+                }
+            }
 
-            document.getElementById('kits-placeholder').classList.toggle('hidden', !querySnapshot.empty);
-            
-            localKits = []; // Reset local cache
-            
-            querySnapshot.forEach(doc => {
-                const kit = { id: doc.id, ...doc.data() };
-                localKits.push(kit);
+            // Enviar
+            const obsSys = systemObsReadonly.innerText;
+            const obsUser = document.getElementById('observacao').value;
+            const finalObs = obsSys + (obsUser ? '\nMsg: ' + obsUser : '');
+            const finalItems = items.map(({_stock, ...rest}) => rest);
+
+            try {
+                // Monitorado (addDoc)
+                const batch = targets.map(t => addDoc(getCollectionRef('solicitacoes'), {
+                    solicitanteId: currentProfessor.id,
+                    solicitanteName: currentProfessor.name,
+                    itensSolicitados: finalItems,
+                    dataAgendamento: t.date,
+                    periodo: t.period,
+                    observacao: finalObs,
+                    status: 'Pendente',
+                    timestamp: serverTimestamp()
+                }));
+                await Promise.all(batch);
                 
+                showSuccessModal('Solicitações enviadas com sucesso!');
+                // Reset
+                document.getElementById('observacao').value = '';
+                document.getElementById('itens-list').innerHTML = '';
+                createItemRow('itens-list');
+                selectedDates = []; renderSelectedDates();
+                
+            } catch(err) {
+                console.error(err);
+                alert('Erro ao enviar.');
+            } finally {
+                btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar';
+            }
+        });
+
+        // --- KITS E HISTÓRICO (Simples) ---
+        async function renderKits() {
+            const list = document.getElementById('kits-list');
+            list.innerHTML = '';
+            const q = query(getCollectionRef('kits'), where("professorId", "==", currentProfessor.id));
+            
+            // Monitorado
+            const snap = await getDocs(q);
+            document.getElementById('kits-placeholder').classList.toggle('hidden', !snap.empty);
+            
+            localKits = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            localKits.forEach(kit => {
                 const div = document.createElement('div');
-                div.className = 'p-4 border rounded-lg bg-white';
+                div.className = 'p-4 border rounded-lg bg-white shadow-sm';
                 div.innerHTML = `
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="font-bold text-gray-800">${kit.kitName}</p>
-                            <div class="text-xs text-gray-500 mt-1">
-                                ${kit.items.map(i => `<span>${i.quantidade}x ${i.itemName}</span>`).join('<br>')}
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button data-id="${kit.id}" class="edit-kit-btn text-blue-400 hover:text-blue-600 text-sm" title="Editar Kit"><i class="fas fa-edit"></i></button>
-                            <button data-id="${kit.id}" class="delete-kit-btn text-red-400 hover:text-red-600 text-sm" title="Excluir Kit"><i class="fas fa-trash"></i></button>
+                    <div class="flex justify-between">
+                        <span class="font-bold">${kit.kitName}</span>
+                        <div class="gap-2 flex">
+                            <button class="edit-kit text-blue-500"><i class="fas fa-edit"></i></button>
+                            <button class="del-kit text-red-500"><i class="fas fa-trash"></i></button>
                         </div>
                     </div>
-                    <button data-kit-items='${JSON.stringify(kit.items)}' class="use-kit-btn mt-3 w-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-1 px-3 rounded text-sm">Usar este Kit</button>
+                    <div class="text-xs text-gray-500 my-2">${kit.items.map(i => `${i.quantidade}x ${i.itemName}`).join(', ')}</div>
+                    <button class="use-kit w-full bg-blue-50 text-blue-700 py-1 rounded text-sm font-semibold hover:bg-blue-100">Usar Kit</button>
                 `;
-                kitsList.appendChild(div);
-            });
-        }
-
-        // --- Event Listeners ---
-        document.addEventListener('DOMContentLoaded', () => {
-            resetRequestForm();
-            createItemRow('kit-itens-list');
-        });
-
-        // Listener para Data e Período - Revalidar estoque ao mudar e atualizar resumo obs
-        dataAgendamentoInput.addEventListener('change', () => {
-            revalidateAllRows();
-            renderSystemObs();
-        });
-        // Note: periodosContainer listener already handled above
-
-        acessarBtn.addEventListener('click', async () => {
-            const matricula = matriculaInput.value.trim();
-            if (!matricula) return;
-
-            acessarBtn.disabled = true;
-            acessarBtn.textContent = '...';
-
-            // OTIMIZAÇÃO: Busca apenas o professor específico em vez de todos
-            const q = query(getCollectionRef('professores'), where("matricula", "==", matricula));
-            
-            try {
-                const querySnapshot = await getDocs(q);
-                countRead(querySnapshot.size); // Deve ser 1
-
-                if (!querySnapshot.empty) {
-                    const doc = querySnapshot.docs[0];
-                    const professor = { id: doc.id, ...doc.data() };
-                    
-                    currentProfessor = professor;
-                    professorNameDisplay.textContent = professor.name;
-                    professorInfoDiv.classList.remove('hidden');
-                    tabsContainer.classList.add('active');
-                    document.getElementById('tab-content-solicitacao').classList.add('active');
-                    
-                    acessarBtn.classList.add('hidden');
-                    trocarUsuarioBtn.classList.remove('hidden');
-                    matriculaInput.disabled = true;
-                    matriculaError.classList.add('hidden');
-                    matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-0';
-
-                    attachRealtimeListeners(); 
-                    renderKits();
-                } else {
-                    matriculaError.textContent = 'Matrícula não encontrada.';
-                    matriculaError.classList.remove('hidden');
-                    matriculaFeedbackIcon.className = 'matricula-feedback absolute right-3 top-1/2 -translate-y-1/2 text-lg opacity-100 fas fa-times-circle text-red-500';
-                }
-            } catch (error) {
-                console.error("Erro no login:", error);
-            } finally {
-                acessarBtn.disabled = false;
-                acessarBtn.textContent = 'Acessar';
-            }
-        });
-
-        trocarUsuarioBtn.addEventListener('click', () => {
-            if (unsubscribeItems) unsubscribeItems(); 
-            if (unsubscribePending) unsubscribePending();
-            if (unsubscribeMyHistory) unsubscribeMyHistory();
-            if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
-            location.reload();
-        });
-
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                const tab = button.dataset.tab;
-                document.querySelectorAll('.form-section').forEach(sec => sec.classList.remove('active'));
-                document.getElementById(`tab-content-${tab}`).classList.add('active');
-            });
-        });
-
-        function addRemoveListener(containerId) {
-            document.getElementById(containerId).addEventListener('click', e => {
-                const removeBtn = e.target.closest('.remove-item-btn');
-                const container = document.getElementById(containerId);
-                if (removeBtn && container.children.length > 1) {
-                    removeBtn.closest('.item-row').remove();
-                }
-            });
-        }
-        addRemoveListener('itens-list');
-        addRemoveListener('kit-itens-list');
-
-        form.addEventListener('submit', async e => {
-            e.preventDefault();
-            if (!currentProfessor) return;
-
-            const submitBtn = document.getElementById('submit-btn');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Enviando...';
-            
-            // Determine which dates to process
-            let datesToProcess = [];
-            if (selectedDates.length > 0) {
-                // Use the list of objects { date, period }
-                datesToProcess = selectedDates;
-            } else {
-                // Check if user filled inputs but didn't click "+"
-                const dateVal = dataAgendamentoInput.value;
-                const currentPeriods = getSelectedPeriods();
-                if (dateVal && currentPeriods.length > 0) {
-                    currentPeriods.forEach(p => {
-                        datesToProcess.push({ date: dateVal, period: p });
-                    });
-                }
-            }
-            
-            if (datesToProcess.length === 0) {
-                alert('Selecione pelo menos uma data e período.');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
-                return;
-            }
-
-            const itensSolicitados = [];
-            
-            // Step 1: Collect Items
-            for (const row of document.querySelectorAll('#itens-list .item-row')) {
-                const itemId = row.dataset.itemId;
-                const quantity = parseInt(row.querySelector('.item-quantity-input').value, 10);
-
-                if (!itemId || !quantity || quantity <= 0) continue;
                 
-                // Get item details for validation
-                const item = localItems.find(i => i.id === itemId);
-                if(item) {
-                     itensSolicitados.push({ 
-                        itemId, 
-                        itemName: row.querySelector('.item-select-btn').textContent.trim(), 
-                        quantidade: quantity,
-                        // Internal reference for validation
-                        _stockItem: item 
-                    });
-                }
-            }
-
-            if (itensSolicitados.length === 0) {
-                alert('Adicione pelo menos um item válido à solicitação.');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
-                return;
-            }
-            
-            // Step 2: Validate Stock for ALL dates
-            let globalValidationPass = true;
-            
-            for (const dateObj of datesToProcess) {
-                for (const reqItem of itensSolicitados) {
-                    const available = getAvailableStock(reqItem._stockItem, dateObj.date, dateObj.period);
-                    if (reqItem.quantidade > available) {
-                        alert(`Estoque insuficiente para o item "${reqItem.itemName}" na data ${new Date(dateObj.date + 'T00:00:00').toLocaleDateString('pt-BR')} (${dateObj.period}).\nDisponível: ${available}, Solicitado: ${reqItem.quantidade}`);
-                        globalValidationPass = false;
-                        break;
-                    }
-                }
-                if (!globalValidationPass) break;
-            }
-            
-            if (!globalValidationPass) {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
-                return;
-            }
-
-            // Step 3: Remove internal props and Send
-            const cleanItens = itensSolicitados.map(({_stockItem, ...rest}) => rest);
-            
-            // Combinar observação do sistema com observação do usuário
-            const systemObs = document.getElementById('system-obs-readonly').innerText;
-            const userObs = document.getElementById('observacao').value.trim();
-            const finalObservacao = systemObs + (userObs ? '\n\nDetalhes:\n' + userObs : '');
-
-            try {
-                // Generate a request for EACH date
-                const promises = datesToProcess.map(dateObj => {
-                    return addDoc(getCollectionRef('solicitacoes'), {
-                        solicitanteId: currentProfessor.id,
-                        solicitanteName: currentProfessor.name,
-                        itensSolicitados: cleanItens,
-                        dataAgendamento: dateObj.date,
-                        periodo: dateObj.period, 
-                        observacao: finalObservacao, // Usa a observação combinada
-                        status: 'Pendente',
-                        timestamp: serverTimestamp()
-                    });
-                });
-                
-                await Promise.all(promises);
-                
-                // Monitor: Contagem de gravação
-                countWrite(datesToProcess.length);
-
-                showSuccessModal(`Sucesso! Foram gerados ${datesToProcess.length} pedido(s).`, () => {
-                    resetRequestForm();
-                });
-            } catch (error) {
-                console.error("Erro ao enviar solicitação:", error);
-                alert("Ocorreu um erro ao enviar a solicitação. Tente novamente.");
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar Solicitação(ões)';
-            }
-        });
-
-        createKitForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const kitName = document.getElementById('kit-name').value.trim();
-            if (!kitName) { alert('Por favor, dê um nome ao seu kit.'); return; }
-
-            const items = [];
-            for (const row of document.querySelectorAll('#kit-itens-list .item-row')) {
-                const itemId = row.dataset.itemId;
-                const quantity = parseInt(row.querySelector('.item-quantity-input').value, 10);
-
-                if (!itemId || !quantity || quantity <= 0) continue;
-                
-                items.push({ 
-                    itemId, 
-                    itemName: row.querySelector('.item-select-btn').textContent.trim(), 
-                    quantidade: quantity 
-                });
-            }
-
-            if (items.length === 0) {
-                alert('Adicione pelo menos um item válido ao kit.');
-                return;
-            }
-
-            try {
-                if (editingKitId) {
-                    // Update existing kit
-                    await updateDoc(doc(db, 'almoxarifado', appId, 'kits', editingKitId), {
-                        kitName,
-                        items
-                    });
-                    showSuccessModal('Seu kit foi atualizado com sucesso!');
-                } else {
-                    // Create new kit
-                    await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName, items });
-                    showSuccessModal('Seu kit foi salvo com sucesso!');
-                }
-                
-                // Monitor: Contagem de gravação
-                countWrite(1);
-
-                resetKitForm();
-                renderKits();
-                
-            } catch (err) {
-                console.error("Erro ao salvar kit:", err);
-                alert("Erro ao salvar o kit.");
-            }
-        });
-
-        document.getElementById('kits-list').addEventListener('click', (e) => {
-            const useBtn = e.target.closest('.use-kit-btn');
-            const deleteBtn = e.target.closest('.delete-kit-btn');
-            const editBtn = e.target.closest('.edit-kit-btn');
-
-            if (useBtn) {
-                const items = JSON.parse(useBtn.dataset.kitItems);
-                const itemListContainer = document.getElementById('itens-list');
-                itemListContainer.innerHTML = '';
-                items.forEach(item => createItemRow('itens-list', item));
-                createItemRow('itens-list'); 
-                document.querySelector('.tab-button[data-tab="solicitacao"]').click();
-            }
-
-            if (deleteBtn) {
-                const kitId = deleteBtn.dataset.id;
-                showConfirmModal('Tem certeza que deseja excluir este kit?', () => {
-                    deleteDoc(doc(db, 'almoxarifado', appId, 'kits', kitId)).then(() => {
-                        // Monitor: Contagem de deleção
-                        countDelete(1);
+                div.querySelector('.del-kit').onclick = async () => {
+                    // Substitui confirm() por showConfirmModal
+                    showConfirmModal('Tem a certeza que deseja excluir este kit?', async () => {
+                        await deleteDoc(doc(db, 'almoxarifado', appId, 'kits', kit.id));
                         renderKits();
-                        showSuccessModal('Kit excluído com sucesso.');
-                        // If we were editing this kit, cancel editing
-                        if (editingKitId === kitId) {
-                            resetKitForm();
-                        }
-                    }).catch(err => console.error("Erro ao excluir kit:", err));
-                });
+                    });
+                };
+                div.querySelector('.edit-kit').onclick = () => {
+                    document.getElementById('kit-name').value = kit.kitName;
+                    document.getElementById('kit-itens-list').innerHTML = '';
+                    kit.items.forEach(i => createItemRow('kit-itens-list', i));
+                    createItemRow('kit-itens-list');
+                    editingKitId = kit.id;
+                    document.getElementById('create-kit-title').textContent = "Editar Kit";
+                    document.getElementById('submit-kit-btn').textContent = "Atualizar";
+                    document.getElementById('cancel-edit-kit-btn').classList.remove('hidden');
+                };
+                div.querySelector('.use-kit').onclick = () => {
+                    document.getElementById('itens-list').innerHTML = '';
+                    kit.items.forEach(i => createItemRow('itens-list', i));
+                    createItemRow('itens-list');
+                    document.querySelector('[data-tab="solicitacao"]').click();
+                };
+                list.appendChild(div);
+            });
+        }
+
+        document.getElementById('create-kit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('kit-name').value;
+            const items = [];
+            document.querySelectorAll('#kit-itens-list .item-row').forEach(r => {
+                const id = r.dataset.itemId;
+                const q = r.querySelector('input').value;
+                if(id && q) items.push({itemId: id, itemName: r.querySelector('button').textContent.trim(), quantidade: parseInt(q)});
+            });
+            if(items.length === 0) return alert('Adicione itens.');
+            
+            if(editingKitId) {
+                // Monitorado
+                await updateDoc(doc(db, 'almoxarifado', appId, 'kits', editingKitId), { kitName: name, items });
+            } else {
+                // Monitorado
+                await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName: name, items });
             }
             
-            if (editBtn) {
-                const kitId = editBtn.dataset.id;
-                const kit = localKits.find(k => k.id === kitId);
-                if (kit) {
-                    startEditingKit(kit);
-                }
-            }
+            document.getElementById('create-kit-form').reset();
+            document.getElementById('kit-itens-list').innerHTML = '';
+            createItemRow('kit-itens-list');
+            renderKits();
+            document.getElementById('cancel-edit-kit-btn').click();
         });
-        
-        document.getElementById('tab-content-historico').addEventListener('click', (e) => {
-            const cancelBtn = e.target.closest('.cancel-solicitacao-btn');
-            const reutilizarBtn = e.target.closest('.reutilizar-btn');
 
-            if (cancelBtn) {
-                const solicitacaoId = cancelBtn.dataset.id;
-                const type = cancelBtn.dataset.type; 
-                const collectionName = type === 'retirada' ? 'solicitacoes' : 'solicitacoes_compra';
-                
-                showConfirmModal('Tem certeza que deseja cancelar esta solicitação?', async () => {
-                    try {
-                        await updateDoc(doc(db, 'almoxarifado', appId, collectionName, solicitacaoId), {
-                            status: 'Cancelado'
-                        });
-                        // Monitor: Contagem de gravação (update conta como write)
-                        countWrite(1);
+        document.getElementById('cancel-edit-kit-btn').onclick = () => {
+            editingKitId = null;
+            document.getElementById('create-kit-form').reset();
+            document.getElementById('kit-itens-list').innerHTML = '';
+            createItemRow('kit-itens-list');
+            document.getElementById('create-kit-title').textContent = "Criar Novo Kit";
+            document.getElementById('submit-kit-btn').textContent = "Salvar Kit";
+            document.getElementById('cancel-edit-kit-btn').classList.add('hidden');
+        };
 
-                        showSuccessModal('Sua solicitação foi cancelada.');
-                    } catch (error) {
-                        console.error("Erro ao cancelar solicitação:", error);
-                        alert("Não foi possível cancelar a solicitação.");
-                    }
-                });
-            }
+        function displayHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            
+            // Ordenar e pegar apenas os últimos 10 (Client-side)
+            const historyToShow = myPersonalSolicitacoes
+                .sort((a,b) => {
+                    const timeA = a.timestamp ? a.timestamp.seconds : 0;
+                    const timeB = b.timestamp ? b.timestamp.seconds : 0;
+                    return timeB - timeA;
+                })
+                .slice(0, 10);
 
-            if (reutilizarBtn) {
-                const items = JSON.parse(reutilizarBtn.dataset.solicitacaoItems);
-                const periodo = reutilizarBtn.dataset.periodo;
+            document.getElementById('history-placeholder').classList.toggle('hidden', historyToShow.length > 0);
+            
+            historyToShow.forEach(sol => {
+                const div = document.createElement('div');
+                div.className = 'p-4 border rounded-lg bg-gray-50';
+                const statusColor = {'Pendente':'bg-yellow-100 text-yellow-800','Concluída':'bg-green-100 text-green-800','Rejeitada':'bg-red-100 text-red-800','Cancelado':'bg-gray-200'}[sol.status] || 'bg-gray-100';
                 
-                const itemListContainer = document.getElementById('itens-list');
-                itemListContainer.innerHTML = '';
-                items.forEach(item => createItemRow('itens-list', item));
-                createItemRow('itens-list');
-                
-                const today = new Date().toISOString().split('T')[0];
-                dataAgendamentoInput.value = today;
-                
-                // Set checkboxes based on the historical period (single value usually)
-                if (periodo) {
-                    periodosContainer.querySelectorAll('input[name="periodo"]').forEach(cb => {
-                        cb.checked = (cb.value === periodo);
+                div.innerHTML = `
+                    <div class="flex justify-between">
+                        <span class="font-bold text-gray-700">${new Date(sol.dataAgendamento+'T00:00:00').toLocaleDateString('pt-BR')} (${sol.periodo})</span>
+                        <span class="px-2 rounded text-xs font-bold ${statusColor} flex items-center">${sol.status}</span>
+                    </div>
+                    <div class="text-xs mt-2 text-gray-600">${sol.itensSolicitados.map(i => `${i.quantidade}x ${i.itemName}`).join(', ')}</div>
+                    <div class="flex gap-4 mt-3 pt-2 border-t border-gray-200">
+                        <button class="repeat-req text-blue-600 text-xs font-bold hover:text-blue-800 flex items-center transition-colors">
+                            <i class="fas fa-redo-alt mr-1"></i> Repetir Pedido
+                        </button>
+                        ${sol.status === 'Pendente' ? `<button class="cancel-req text-red-500 text-xs font-bold hover:text-red-700 flex items-center transition-colors"><i class="fas fa-times mr-1"></i> Cancelar</button>` : ''}
+                    </div>
+                `;
+
+                // Lógica do botão Repetir - Substituído confirm() por showConfirmModal
+                div.querySelector('.repeat-req').onclick = () => {
+                    showConfirmModal('Deseja carregar os itens deste pedido na área de solicitação?', () => {
+                        // Limpa a lista atual
+                        document.getElementById('itens-list').innerHTML = '';
+                        
+                        // Recria os itens do histórico
+                        if (sol.itensSolicitados) {
+                            sol.itensSolicitados.forEach(i => createItemRow('itens-list', i));
+                        }
+                        
+                        // Adiciona uma linha vazia no final para novos itens
+                        createItemRow('itens-list');
+                        
+                        // Vai para a aba de solicitação
+                        document.querySelector('[data-tab="solicitacao"]').click();
+                        
+                        // Scroll para o topo suavemente
+                        document.getElementById('identification-section').scrollIntoView({ behavior: 'smooth' });
                     });
-                    updateSelectedPeriodsText();
+                };
+
+                if(sol.status === 'Pendente') {
+                    div.querySelector('.cancel-req').onclick = async () => {
+                        // Substitui confirm() por showConfirmModal
+                        showConfirmModal('Tem a certeza que deseja cancelar esta solicitação?', async () => {
+                            await updateDoc(doc(db, 'almoxarifado', appId, 'solicitacoes', sol.id), {status: 'Cancelado'});
+                        });
+                    };
                 }
-                
-                document.querySelector('.tab-button[data-tab="solicitacao"]').click();
-            }
+                list.appendChild(div);
+            });
+        }
+
+        // --- TABS & HELPERS ---
+        document.querySelectorAll('.tab-button').forEach(b => b.onclick = () => {
+            document.querySelectorAll('.tab-button').forEach(x => x.classList.remove('active'));
+            document.querySelectorAll('.form-section').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            document.getElementById(`tab-content-${b.dataset.tab}`).classList.add('active');
         });
 
-        // Listeners do Modal
-        closeModalBtn.addEventListener('click', closeItemModal);
-        itemModal.addEventListener('click', (e) => {
-            if (e.target === itemModal) closeItemModal();
-        });
-        itemSearchInput.addEventListener('input', filterItems);
-        document.getElementById('status-update-ok-btn').addEventListener('click', () => {
-            statusUpdateModal.classList.add('hidden');
-        });
+        document.getElementById('close-modal-btn').onclick = () => document.getElementById('item-selection-modal').classList.add('hidden');
+        document.getElementById('status-update-ok-btn').onclick = () => document.getElementById('status-update-modal').classList.add('hidden');
+        document.getElementById('success-ok-btn').onclick = () => document.getElementById('success-modal').classList.add('hidden');
+        document.getElementById('confirm-cancel-btn').onclick = () => document.getElementById('confirm-modal').classList.add('hidden');
+
+        // FUNÇÃO DE CONFIRMAÇÃO SEGURA (Substitui o window.confirm nativo)
+        window.showConfirmModal = (msg, onConfirmCallback) => {
+            document.getElementById('confirm-message').textContent = msg;
+            const modal = document.getElementById('confirm-modal');
+            const okBtn = document.getElementById('confirm-ok-btn');
+            
+            // Remove listeners antigos clonando o botão
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            
+            newOkBtn.onclick = () => {
+                onConfirmCallback();
+                modal.classList.add('hidden');
+            };
+            
+            modal.classList.remove('hidden');
+        };
+
+        // Helpers globais para modais
+        window.showStatusUpdateModal = (msg, type) => {
+            const icon = document.getElementById('status-update-icon-container');
+            const btn = document.getElementById('status-update-ok-btn');
+            document.getElementById('status-update-message').textContent = msg;
+            
+            if(type === 'success') {
+                icon.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-5';
+                icon.innerHTML = '<i class="fas fa-check text-4xl text-green-600"></i>';
+                btn.className = 'w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg';
+            } else {
+                icon.className = 'mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-5';
+                icon.innerHTML = '<i class="fas fa-times text-4xl text-red-600"></i>';
+                btn.className = 'w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg';
+            }
+            document.getElementById('status-update-modal').classList.remove('hidden');
+        };
+
+        window.showSuccessModal = (msg) => {
+            document.getElementById('success-message').textContent = msg;
+            document.getElementById('success-modal').classList.remove('hidden');
+        };
+
+        // Init
+        dataAgendamentoInput.value = new Date().toISOString().split('T')[0];
+        dataAgendamentoInput.addEventListener('change', () => { revalidateAllRows(); renderSystemObs(); });
+        
+        // APENAS UMA CHAMADA PARA CADA - Corrigido duplicidade
+        createItemRow('itens-list');
+        createItemRow('kit-itens-list');
+        
+        document.getElementById('itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
+        document.getElementById('kit-itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
+
+        // Força atualização da observação inicial
+        renderSystemObs();
 
     </script>
 </body>
