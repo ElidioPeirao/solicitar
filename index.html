@@ -88,9 +88,6 @@
             <span id="mon-writes" class="text-right font-bold text-yellow-400">0</span>
         </div>
         <div class="mt-1 text-[10px] text-gray-500 italic text-center" id="mon-status">Aguardando...</div>
-        <div class="mt-2 border-t border-green-900 pt-1 text-[9px] text-gray-400">
-            <span id="cache-status-indicator">Verificando Cache...</span>
-        </div>
     </div>
 
     <div class="container mx-auto max-w-4xl w-full mb-16">
@@ -475,17 +472,15 @@
             });
         }
 
-        // --- CONSTANTES DE CACHE ---
-        const ITEMS_CACHE_KEY = 'almox_items_cache_v1';
-        const CATS_CACHE_KEY = 'almox_cats_cache_v1';
-        const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 1 Semana
+        // --- REMOVIDO SISTEMA DE CACHE DE DISCO ---
+        // Agora usamos apenas variáveis em memória RAM para a sessão atual
 
         // --- Estado Global ---
         let localItems = []; 
         let globalPendingSolicitacoes = []; 
         let myPersonalSolicitacoes = []; 
         let localSolicitacoesCompra = [];
-        let categoriesCache = null; 
+        let categoriesCache = null; // Memória RAM apenas
         let currentProfessor = null;
         let activeItemRow = null;
         let selectedDates = []; 
@@ -509,7 +504,6 @@
         const addDateBtn = document.getElementById('add-date-btn');
         const selectedDatesContainer = document.getElementById('selected-dates-container');
         const systemObsReadonly = document.getElementById('system-obs-readonly');
-        const cacheStatusIndicator = document.getElementById('cache-status-indicator');
         
         // Chat DOM
         const chatTrigger = document.getElementById('prof-chat-trigger');
@@ -526,81 +520,35 @@
         const periodoSelectedText = document.getElementById('periodo-selected-text');
         const periodosContainer = document.getElementById('periodos-container');
 
-        // --- GERENCIAMENTO DE CACHE ---
+        // --- GERENCIAMENTO DE DADOS (SEM CACHE) ---
 
-        async function loadItemsFromCacheOrDB(force = false) {
-            cacheStatusIndicator.innerText = "Verificando Itens...";
+        async function loadItemsFromDB() {
+            // Atualiza status no monitor
+            const statusEl = document.getElementById('mon-status');
+            if(statusEl) statusEl.innerText = "Baixando Itens...";
             
-            if (!force) {
-                const cached = localStorage.getItem(ITEMS_CACHE_KEY);
-                if (cached) {
-                    try {
-                        const data = JSON.parse(cached);
-                        const age = Date.now() - data.timestamp;
-                        if (age < CACHE_EXPIRY_MS) {
-                            localItems = data.items;
-                            cacheStatusIndicator.innerText = "Usando Cache Local (Itens)";
-                            cacheStatusIndicator.className = "text-green-500 font-bold";
-                            revalidateAllRows();
-                            return;
-                        }
-                    } catch (e) {
-                        console.error("Cache inválido", e);
-                    }
-                }
-            }
-
-            // Se chegou aqui, precisa baixar
-            cacheStatusIndicator.innerText = "Baixando Itens do DB...";
-            cacheStatusIndicator.className = "text-yellow-500 font-bold";
             try {
+                // Sempre busca do banco
                 const snap = await getDocs(getCollectionRef('itens'));
                 localItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
-                // Salva no Cache
-                localStorage.setItem(ITEMS_CACHE_KEY, JSON.stringify({
-                    timestamp: Date.now(),
-                    items: localItems
-                }));
-                
-                cacheStatusIndicator.innerText = "Itens Atualizados";
-                cacheStatusIndicator.className = "text-blue-500";
                 revalidateAllRows();
+                if(statusEl) statusEl.innerText = "Itens Atualizados";
             } catch (e) {
                 console.error("Erro ao baixar itens", e);
-                cacheStatusIndicator.innerText = "Erro ao baixar itens";
+                if(statusEl) statusEl.innerText = "Erro ao baixar";
             }
         }
 
-        async function loadCategoriesFromCacheOrDB(force = false) {
-            // Verifica memória primeiro
-            if (categoriesCache && !force) return;
-
-            // Verifica LocalStorage
-            if (!force) {
-                const cached = localStorage.getItem(CATS_CACHE_KEY);
-                if (cached) {
-                    try {
-                        const data = JSON.parse(cached);
-                        const age = Date.now() - data.timestamp;
-                        if (age < CACHE_EXPIRY_MS) {
-                            categoriesCache = new Map(data.categories); // Map suporta array de pares [key, val]
-                            return;
-                        }
-                    } catch (e) { console.error("Cache cat invalido", e); }
-                }
-            }
+        async function loadCategoriesFromDB() {
+            // Verifica memória RAM primeiro (apenas para evitar refetch ao abrir/fechar modal na mesma sessão)
+            if (categoriesCache) return;
 
             // Baixa do DB
             try {
                 const snap = await getDocs(getCollectionRef('categories'));
                 const catsArray = snap.docs.map(d => [d.id, d.data().name]);
                 categoriesCache = new Map(catsArray);
-                
-                localStorage.setItem(CATS_CACHE_KEY, JSON.stringify({
-                    timestamp: Date.now(),
-                    categories: catsArray // Salva como array pq JSON não suporta Map direto
-                }));
             } catch (e) { console.error(e); }
         }
 
@@ -800,7 +748,7 @@
         // --- LÓGICA DE SOLICITAÇÃO E ESTOQUE ---
 
         function attachRealtimeListeners() {
-            loadItemsFromCacheOrDB(); // Carrega itens com cache de 1 semana
+            loadItemsFromDB(); // Carrega itens SEMPRE do DB
 
             // Mantemos PENDENTES em realtime para evitar conflito de reserva (importante)
             const qPending = query(getCollectionRef('solicitacoes'), where("status", "==", "Pendente"));
@@ -979,8 +927,8 @@
             const selectedPeriods = getSelectedPeriods();
             const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã'];
 
-            // Carrega categorias (via Cache ou DB)
-            await loadCategoriesFromCacheOrDB();
+            // Carrega categorias (via DB, sem cache persistente)
+            await loadCategoriesFromDB();
 
             const categorizedItems = {};
             
@@ -998,7 +946,7 @@
                     });
                 }
 
-                const catName = categoriesCache.get(item.categoryId) || 'Outros';
+                const catName = categoriesCache && categoriesCache.has(item.categoryId) ? categoriesCache.get(item.categoryId) : 'Outros';
                 if (!categorizedItems[catName]) categorizedItems[catName] = [];
                 categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
             });
