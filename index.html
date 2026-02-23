@@ -431,36 +431,37 @@
         
         async function getDocs(q) {
             const snap = await _getDocs(q);
-            dbMonitor.logRead(snap.size); 
+            dbMonitor.logRead(snap.size); // Conta documentos retornados
             return snap;
         }
 
         async function addDoc(ref, data) {
             const res = await _addDoc(ref, data);
-            dbMonitor.logWrite(1); 
+            dbMonitor.logWrite(1); // 1 Escrita
             return res;
         }
 
         async function setDoc(ref, data, options) {
             const res = await _setDoc(ref, data, options);
-            dbMonitor.logWrite(1); 
+            dbMonitor.logWrite(1); // 1 Escrita
             return res;
         }
 
         async function updateDoc(ref, data) {
             const res = await _updateDoc(ref, data);
-            dbMonitor.logWrite(1); 
+            dbMonitor.logWrite(1); // 1 Escrita (Atualização)
             return res;
         }
 
         async function deleteDoc(ref) {
             const res = await _deleteDoc(ref);
-            dbMonitor.logWrite(1); 
+            dbMonitor.logWrite(1); // 1 Escrita (Deleção conta como escrita)
             return res;
         }
 
         function onSnapshot(refOrQuery, callback) {
             return _onSnapshot(refOrQuery, (snap) => {
+                // Verificar se é uma lista (tem docChanges) ou um documento único
                 if (typeof snap.docChanges === 'function') {
                     const changes = snap.docChanges().length;
                     if (changes > 0) dbMonitor.logRead(changes);
@@ -471,12 +472,15 @@
             });
         }
 
+        // --- REMOVIDO SISTEMA DE CACHE DE DISCO ---
+        // Agora usamos apenas variáveis em memória RAM para a sessão atual
+
         // --- Estado Global ---
         let localItems = []; 
-        // Renomeado para representar todas as solicitações ativas (Pendentes, Em Uso, etc)
-        let globalActiveSolicitacoes = []; 
+        let globalPendingSolicitacoes = []; 
         let myPersonalSolicitacoes = []; 
-        let categoriesCache = null; 
+        let localSolicitacoesCompra = [];
+        let categoriesCache = null; // Memória RAM apenas
         let currentProfessor = null;
         let activeItemRow = null;
         let selectedDates = []; 
@@ -484,8 +488,8 @@
         let localKits = [];
 
         // --- Listeners do Firebase (para detach) ---
-        let unsubscribeItems, unsubscribeActiveRequests, unsubscribeMyHistory, unsubscribeSolicitacoesCompra;
-        let unsubscribeProfMessages, unsubscribeProfMeta; 
+        let unsubscribeItems, unsubscribePending, unsubscribeMyHistory, unsubscribeSolicitacoesCompra;
+        let unsubscribeProfMessages, unsubscribeProfMeta; // Chat Listeners
 
         // --- Elementos DOM ---
         const matriculaInput = document.getElementById('solicitante-matricula');
@@ -516,14 +520,15 @@
         const periodoSelectedText = document.getElementById('periodo-selected-text');
         const periodosContainer = document.getElementById('periodos-container');
 
-        // --- GERENCIAMENTO DE DADOS ---
+        // --- GERENCIAMENTO DE DADOS (SEM CACHE) ---
 
         async function loadItemsFromDB() {
+            // Atualiza status no monitor
             const statusEl = document.getElementById('mon-status');
             if(statusEl) statusEl.innerText = "Baixando Itens...";
             
             try {
-                // AQUI OS ITENS SÃO CARREGADOS. O almoxarifado não deve diminuir o quantity das tesouras, projetores, etc.
+                // Sempre busca do banco
                 const snap = await getDocs(getCollectionRef('itens'));
                 localItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
@@ -536,12 +541,92 @@
         }
 
         async function loadCategoriesFromDB() {
+            // Verifica memória RAM primeiro (apenas para evitar refetch ao abrir/fechar modal na mesma sessão)
             if (categoriesCache) return;
+
+            // Baixa do DB
             try {
                 const snap = await getDocs(getCollectionRef('categories'));
                 const catsArray = snap.docs.map(d => [d.id, d.data().name]);
                 categoriesCache = new Map(catsArray);
             } catch (e) { console.error(e); }
+        }
+
+        // --- FUNÇÕES DE INICIALIZAÇÃO ---
+
+        async function initProfessorChat(professor) {
+            const chatId = `chat_${professor.id}`; 
+            const chatRef = doc(getCollectionRef('chats'), chatId);
+            
+            // Exibir o botão flutuante
+            chatTrigger.classList.remove('hidden');
+
+            // 1. Criar/Atualizar documento do chat
+            try {
+                await setDoc(chatRef, {
+                    professorId: professor.id,
+                    professorName: professor.name,
+                    lastUpdated: serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Chat init error", e);
+            }
+
+            // 2. Escutar Badge (não lidas)
+            unsubscribeProfMeta = onSnapshot(chatRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const unread = data.unreadProfessor || 0;
+                    
+                    if (unread > 0) {
+                        chatBadge.textContent = unread;
+                        chatBadge.classList.remove('hidden');
+                        // Animar se fechado
+                        if (!chatWindow.classList.contains('visible-chat')) {
+                            chatTrigger.classList.add('animate-bounce');
+                            setTimeout(() => chatTrigger.classList.remove('animate-bounce'), 2000);
+                        }
+                    } else {
+                        chatBadge.classList.add('hidden');
+                    }
+                }
+            });
+
+            // 3. Escutar Mensagens (LIMITADO A 10 PARA REDUZIR LEITURAS)
+            const messagesRef = collection(chatRef, 'messages');
+            const qMessages = query(messagesRef, orderBy('timestamp', 'asc'), limit(10));
+            
+            unsubscribeProfMessages = onSnapshot(qMessages, (snapshot) => {
+                // Limpa área (mantém msg padrão se quiser, aqui vamos reconstruir)
+                chatMessagesArea.innerHTML = '';
+                
+                // Mensagem de sistema fixa no topo
+                const welcomeDiv = document.createElement('div');
+                welcomeDiv.className = 'flex w-full justify-start';
+                welcomeDiv.innerHTML = `<div class="chat-message-bubble chat-bubble-other"><p>Olá ${professor.name.split(' ')[0]}! Em que podemos ajudar?</p></div>`;
+                chatMessagesArea.appendChild(welcomeDiv);
+
+                snapshot.docs.forEach(doc => {
+                    const msg = doc.data();
+                    const isMe = msg.senderRole === 'professor';
+                    
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'}`;
+                    
+                    const timeString = msg.timestamp ? msg.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...';
+
+                    msgDiv.innerHTML = `
+                        <div class="chat-message-bubble ${isMe ? 'chat-bubble-me' : 'chat-bubble-other'}">
+                            <p>${msg.text}</p>
+                            <span class="text-[9px] ${isMe ? 'text-blue-100' : 'text-gray-400'} block text-right mt-1">${timeString}</span>
+                        </div>
+                    `;
+                    chatMessagesArea.appendChild(msgDiv);
+                });
+                
+                // Auto scroll
+                chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight;
+            });
         }
 
         // --- LÓGICA DE LOGIN ---
@@ -556,6 +641,7 @@
             const q = query(getCollectionRef('professores'), where("matricula", "==", matricula));
             
             try {
+                // Aqui chamamos nosso getDocs monitorado
                 const querySnapshot = await getDocs(q);
                 if (!querySnapshot.empty) {
                     const docSnap = querySnapshot.docs[0];
@@ -573,8 +659,10 @@
                     matriculaInput.disabled = true;
                     matriculaError.classList.add('hidden');
 
+                    // Inicia funcionalidades
                     attachRealtimeListeners();
                     renderKits();
+                    // initProfessorChat(professor); // Chat desativado temporariamente
 
                 } else {
                     matriculaError.textContent = 'Matrícula não encontrada.';
@@ -590,52 +678,94 @@
         });
 
         trocarUsuarioBtn.addEventListener('click', () => {
+            // Limpa listeners
             if (unsubscribeItems) unsubscribeItems(); 
-            if (unsubscribeActiveRequests) unsubscribeActiveRequests();
+            if (unsubscribePending) unsubscribePending();
             if (unsubscribeMyHistory) unsubscribeMyHistory();
+            if (unsubscribeSolicitacoesCompra) unsubscribeSolicitacoesCompra();
+            if (unsubscribeProfMessages) unsubscribeProfMessages();
+            if (unsubscribeProfMeta) unsubscribeProfMeta();
+            
             location.reload();
+        });
+
+        // --- LÓGICA DO CHAT (UI) ---
+
+        chatTrigger.addEventListener('click', async () => {
+            // Abre Janela
+            chatWindow.classList.remove('hidden-chat');
+            chatWindow.classList.add('visible-chat');
+            chatTrigger.classList.add('hidden'); // Esconde o botão flutuante
+
+            // Zera badge no banco
+            if (currentProfessor) {
+                const chatId = `chat_${currentProfessor.id}`;
+                await updateDoc(doc(getCollectionRef('chats'), chatId), { unreadProfessor: 0 });
+            }
+            chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight;
+        });
+
+        closeChatBtn.addEventListener('click', () => {
+            // Fecha Janela
+            chatWindow.classList.remove('visible-chat');
+            chatWindow.classList.add('hidden-chat');
+            // Mostra botão de volta após transição
+            setTimeout(() => chatTrigger.classList.remove('hidden'), 300);
+        });
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text || !currentProfessor) return;
+
+            chatInput.value = '';
+            
+            const chatId = `chat_${currentProfessor.id}`;
+            const chatRef = doc(getCollectionRef('chats'), chatId);
+            const messagesRef = collection(chatRef, 'messages');
+
+            try {
+                // Adiciona mensagem (Monitorado)
+                await addDoc(messagesRef, {
+                    text,
+                    senderId: currentProfessor.id,
+                    senderName: currentProfessor.name,
+                    senderRole: 'professor',
+                    timestamp: serverTimestamp()
+                });
+
+                // Atualiza metadados do chat para o Admin ver (Monitorado)
+                await updateDoc(chatRef, {
+                    lastMessage: text,
+                    lastMessageTime: serverTimestamp(),
+                    unreadAdmin: increment(1)
+                });
+            } catch(err) {
+                console.error("Erro envio msg", err);
+            }
         });
 
         // --- LÓGICA DE SOLICITAÇÃO E ESTOQUE ---
 
         function attachRealtimeListeners() {
-            loadItemsFromDB(); 
+            loadItemsFromDB(); // Carrega itens SEMPRE do DB
 
-            // SOLUÇÃO: Removemos o 'where' que causa falha silenciosa de permissão/índice no Firebase.
-            // Agora baixamos a coleção e filtramos na memória, garantindo sincronização 100% em tempo real.
-            const qActive = collection(db, 'almoxarifado', appId, 'solicitacoes');
-            
-            unsubscribeActiveRequests = onSnapshot(qActive, (snapshot) => {
-                const cutoffDate = new Date();
-                cutoffDate.setDate(cutoffDate.getDate() - 30);
-                const cutoffStr = cutoffDate.toISOString().split('T')[0];
-
-                globalActiveSolicitacoes = [];
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    if (data.dataAgendamento && data.dataAgendamento >= cutoffStr) {
-                        globalActiveSolicitacoes.push({ id: doc.id, ...data });
-                    }
-                });
+            // Mantemos PENDENTES em realtime para evitar conflito de reserva (importante)
+            const qPending = query(getCollectionRef('solicitacoes'), where("status", "==", "Pendente"));
+            unsubscribePending = onSnapshot(qPending, (snapshot) => {
+                globalPendingSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 revalidateAllRows();
-                
-                // Atualiza o modal instantaneamente se ele estiver aberto na tela de outro professor
-                const modal = document.getElementById('item-selection-modal');
-                if (modal && !modal.classList.contains('hidden') && activeItemRow) {
-                    openItemModal();
-                }
-            }, (error) => {
-                console.error("Erro CRÍTICO no Firebase (Active Requests):", error);
             });
 
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
             unsubscribeMyHistory = onSnapshot(qMyHistory, (snapshot) => {
                 const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
+                // Verifica mudanças de status para notificar
                 newSolicitacoes.forEach(sol => {
                     const foundOld = myPersonalSolicitacoes.find(old => old.id === sol.id);
                     if (foundOld && foundOld.status !== sol.status) {
-                        if (foundOld.status === 'Pendente' && sol.status === 'Aprovado') {
+                        if (foundOld.status === 'Pendente' && sol.status === 'Concluída') {
                             showStatusUpdateModal(`Pedido para ${new Date(sol.dataAgendamento+'T00:00:00').toLocaleDateString('pt-BR')} aceito!`, 'success');
                         } else if (foundOld.status === 'Pendente' && sol.status === 'Rejeitada') {
                             showStatusUpdateModal(`Pedido para ${new Date(sol.dataAgendamento+'T00:00:00').toLocaleDateString('pt-BR')} recusado.`, 'error');
@@ -655,15 +785,12 @@
         }
 
         function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
-            const baseStock = Number(item.quantity) || 0;
-            let pendingReservations = 0;
+            const currentPhysicalStock = item.quantity || 0;
+            let reservationsOnDate = 0;
             const holders = new Set();
             
-            // Verificamos as solicitações ativas para subtrair APENAS o que ainda não foi baixado pelo admin
-            // Se o admin mudou o status (Aprovado, Concluída), assumimos que ele JÁ descontou do banco.
-            for (const sol of globalActiveSolicitacoes) {
-                // Protege o estoque APENAS das solicitações Pendentes para o mesmo turno
-                if (sol.status === 'Pendente' && sol.dataAgendamento === targetDateStr) {
+            for (const sol of globalPendingSolicitacoes) {
+                if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
                     const solPeriod = sol.periodo || 'Integral'; 
                     let isConflict = false;
                     
@@ -674,24 +801,16 @@
                     if (isConflict) {
                         for (const solItem of sol.itensSolicitados) {
                             if (solItem.itemId === item.id) {
-                                pendingReservations += Number(solItem.quantidade) || 0;
+                                reservationsOnDate += solItem.quantidade;
+                                if(sol.solicitanteName) holders.add(sol.solicitanteName);
                             }
-                        }
-                    }
-                }
-                
-                // Apenas para mostrar na interface com quem está o item hoje
-                if (['Aprovado', 'Em Uso', 'Retirado', 'Entregue', 'Concluída'].includes(sol.status) && sol.dataAgendamento === targetDateStr) {
-                    for (const solItem of sol.itensSolicitados) {
-                        if (solItem.itemId === item.id && sol.solicitanteName) {
-                            holders.add(sol.solicitanteName);
                         }
                     }
                 }
             }
             
             return {
-                availableStock: Math.max(0, baseStock - pendingReservations),
+                availableStock: currentPhysicalStock - reservationsOnDate,
                 holders: Array.from(holders)
             };
         }
@@ -709,9 +828,9 @@
             const requestedQuantity = parseInt(quantityInput.value, 10);
 
             if (isKitCreation) {
-                const totalStock = Number(item.quantity) || 0;
-                if (!isNaN(requestedQuantity) && requestedQuantity > totalStock) {
-                     errorP.textContent = `Máx estoque: ${totalStock}`;
+                const physicalStock = item.quantity || 0;
+                if (!isNaN(requestedQuantity) && requestedQuantity > physicalStock) {
+                     errorP.textContent = `Máx físico: ${physicalStock}`;
                      errorP.classList.remove('hidden');
                      quantityInput.classList.add('border-red-500');
                 } else {
@@ -808,6 +927,7 @@
             const selectedPeriods = getSelectedPeriods();
             const targetPeriodForModal = selectedPeriods.length > 0 ? selectedPeriods : ['Manhã'];
 
+            // Carrega categorias (via DB, sem cache persistente)
             await loadCategoriesFromDB();
 
             const categorizedItems = {};
@@ -817,7 +937,7 @@
                 let holdersSet = new Set();
                 
                 if (isKitCreation) {
-                    minAvail = Number(item.quantity) || 0;
+                    minAvail = item.quantity || 0;
                 } else {
                     targetPeriodForModal.forEach(p => {
                         const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
@@ -850,17 +970,17 @@
                     btn.className = `item-button text-left p-2 rounded-md border transition-all ${isUnavailable ? 'bg-red-50 border-red-100 opacity-60' : 'bg-gray-50 hover:bg-blue-50 hover:border-blue-300'}`;
                     if(isUnavailable) btn.disabled = true;
 
-                    const stockText = isKitCreation ? 'Estoque Físico' : 'Disp. no Turno';
+                    const stockText = isKitCreation ? 'Físico' : 'Disp';
                     const holderText = !isKitCreation && item.holders.length > 0 ? `Com: ${item.holders[0]}` : '';
 
                     btn.innerHTML = `
-                        <div class="flex justify-between w-full items-center">
+                        <div class="flex justify-between w-full">
                             <span class="font-semibold text-gray-700 text-sm">${item.name}</span>
                             <span class="text-xs font-bold ${isUnavailable ? 'text-red-500' : 'text-green-600'}">${item.availableStock}</span>
                         </div>
-                        <div class="flex justify-between mt-1 items-center">
+                        <div class="flex justify-between mt-1">
                             <span class="text-[10px] text-gray-500">${stockText}</span>
-                            ${isUnavailable ? `<span class="text-[10px] text-red-400 truncate max-w-[80px]" title="${item.holders.join(', ')}">${holderText}</span>` : ''}
+                            ${isUnavailable ? `<span class="text-[10px] text-red-400 truncate max-w-[80px]">${holderText}</span>` : ''}
                         </div>
                     `;
                     if(!isUnavailable) {
@@ -873,6 +993,7 @@
                                 activeItemRow.dataset.itemId = item.id;
                                 handleStockValidation(activeItemRow);
                                 
+                                // Auto-create next row
                                 const container = activeItemRow.parentElement;
                                 if (activeItemRow === container.lastElementChild) createItemRow(container.id);
                             }
@@ -924,6 +1045,7 @@
 
         function renderSelectedDates() {
             selectedDatesContainer.innerHTML = '';
+            // Sort
             selectedDates.sort((a,b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
             
             selectedDates.forEach(d => {
@@ -982,6 +1104,7 @@
             const btn = document.getElementById('submit-btn');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
 
+            // Datas
             let targets = selectedDates.length > 0 ? selectedDates : [];
             if(targets.length === 0) {
                 const d = dataAgendamentoInput.value;
@@ -993,6 +1116,7 @@
                 alert('Defina as datas.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
             }
 
+            // Itens
             const items = [];
             document.querySelectorAll('#itens-list .item-row').forEach(row => {
                 const id = row.dataset.itemId;
@@ -1007,7 +1131,7 @@
                 alert('Adicione itens.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
             }
 
-            // Validar Estoque Final
+            // Validar Estoque
             for(const t of targets) {
                 for(const i of items) {
                     const avail = calculateStockAndHolders(i._stock, t.date, t.period).availableStock;
@@ -1018,12 +1142,14 @@
                 }
             }
 
+            // Enviar
             const obsSys = systemObsReadonly.innerText;
             const obsUser = document.getElementById('observacao').value;
             const finalObs = obsSys + (obsUser ? '\nMsg: ' + obsUser : '');
             const finalItems = items.map(({_stock, ...rest}) => rest);
 
             try {
+                // Monitorado (addDoc)
                 const batch = targets.map(t => addDoc(getCollectionRef('solicitacoes'), {
                     solicitanteId: currentProfessor.id,
                     solicitanteName: currentProfessor.name,
@@ -1037,6 +1163,7 @@
                 await Promise.all(batch);
                 
                 showSuccessModal('Solicitações enviadas com sucesso!');
+                // Reset
                 document.getElementById('observacao').value = '';
                 document.getElementById('itens-list').innerHTML = '';
                 createItemRow('itens-list');
@@ -1050,12 +1177,13 @@
             }
         });
 
-        // --- KITS E HISTÓRICO ---
+        // --- KITS E HISTÓRICO (Simples) ---
         async function renderKits() {
             const list = document.getElementById('kits-list');
             list.innerHTML = '';
             const q = query(getCollectionRef('kits'), where("professorId", "==", currentProfessor.id));
             
+            // Monitorado
             const snap = await getDocs(q);
             document.getElementById('kits-placeholder').classList.toggle('hidden', !snap.empty);
             
@@ -1076,6 +1204,7 @@
                 `;
                 
                 div.querySelector('.del-kit').onclick = async () => {
+                    // Substitui confirm() por showConfirmModal
                     showConfirmModal('Tem a certeza que deseja excluir este kit?', async () => {
                         await deleteDoc(doc(db, 'almoxarifado', appId, 'kits', kit.id));
                         renderKits();
@@ -1113,8 +1242,10 @@
             if(items.length === 0) return alert('Adicione itens.');
             
             if(editingKitId) {
+                // Monitorado
                 await updateDoc(doc(db, 'almoxarifado', appId, 'kits', editingKitId), { kitName: name, items });
             } else {
+                // Monitorado
                 await addDoc(getCollectionRef('kits'), { professorId: currentProfessor.id, kitName: name, items });
             }
             
@@ -1139,6 +1270,7 @@
             const list = document.getElementById('history-list');
             list.innerHTML = '';
             
+            // Ordenar e pegar apenas os últimos 10 (Client-side)
             const historyToShow = myPersonalSolicitacoes
                 .sort((a,b) => {
                     const timeA = a.timestamp ? a.timestamp.seconds : 0;
@@ -1168,20 +1300,31 @@
                     </div>
                 `;
 
+                // Lógica do botão Repetir - Substituído confirm() por showConfirmModal
                 div.querySelector('.repeat-req').onclick = () => {
                     showConfirmModal('Deseja carregar os itens deste pedido na área de solicitação?', () => {
+                        // Limpa a lista atual
                         document.getElementById('itens-list').innerHTML = '';
+                        
+                        // Recria os itens do histórico
                         if (sol.itensSolicitados) {
                             sol.itensSolicitados.forEach(i => createItemRow('itens-list', i));
                         }
+                        
+                        // Adiciona uma linha vazia no final para novos itens
                         createItemRow('itens-list');
+                        
+                        // Vai para a aba de solicitação
                         document.querySelector('[data-tab="solicitacao"]').click();
+                        
+                        // Scroll para o topo suavemente
                         document.getElementById('identification-section').scrollIntoView({ behavior: 'smooth' });
                     });
                 };
 
                 if(sol.status === 'Pendente') {
                     div.querySelector('.cancel-req').onclick = async () => {
+                        // Substitui confirm() por showConfirmModal
                         showConfirmModal('Tem a certeza que deseja cancelar esta solicitação?', async () => {
                             await updateDoc(doc(db, 'almoxarifado', appId, 'solicitacoes', sol.id), {status: 'Cancelado'});
                         });
@@ -1204,11 +1347,13 @@
         document.getElementById('success-ok-btn').onclick = () => document.getElementById('success-modal').classList.add('hidden');
         document.getElementById('confirm-cancel-btn').onclick = () => document.getElementById('confirm-modal').classList.add('hidden');
 
+        // FUNÇÃO DE CONFIRMAÇÃO SEGURA (Substitui o window.confirm nativo)
         window.showConfirmModal = (msg, onConfirmCallback) => {
             document.getElementById('confirm-message').textContent = msg;
             const modal = document.getElementById('confirm-modal');
             const okBtn = document.getElementById('confirm-ok-btn');
             
+            // Remove listeners antigos clonando o botão
             const newOkBtn = okBtn.cloneNode(true);
             okBtn.parentNode.replaceChild(newOkBtn, okBtn);
             
@@ -1216,9 +1361,11 @@
                 onConfirmCallback();
                 modal.classList.add('hidden');
             };
+            
             modal.classList.remove('hidden');
         };
 
+        // Helpers globais para modais
         window.showStatusUpdateModal = (msg, type) => {
             const icon = document.getElementById('status-update-icon-container');
             const btn = document.getElementById('status-update-ok-btn');
@@ -1241,15 +1388,18 @@
             document.getElementById('success-modal').classList.remove('hidden');
         };
 
+        // Init
         dataAgendamentoInput.value = new Date().toISOString().split('T')[0];
         dataAgendamentoInput.addEventListener('change', () => { revalidateAllRows(); renderSystemObs(); });
         
+        // APENAS UMA CHAMADA PARA CADA - Corrigido duplicidade
         createItemRow('itens-list');
         createItemRow('kit-itens-list');
         
         document.getElementById('itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
         document.getElementById('kit-itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
 
+        // Força atualização da observação inicial
         renderSystemObs();
 
     </script>
