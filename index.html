@@ -601,14 +601,31 @@
         function attachRealtimeListeners() {
             loadItemsFromDB(); 
 
-            // SOLUÇÃO: Em vez de pegar apenas Pendentes, pegamos todas as reservas ativas (Pendente, Aprovado, Em Uso, Retirado).
-            // O Firebase suporta 'in' com até 10 itens no array.
-            const activeStatuses = ["Pendente", "Aprovado", "Em Uso", "Retirado"];
-            const qActive = query(getCollectionRef('solicitacoes'), where("status", "in", activeStatuses));
+            // SOLUÇÃO: Removemos o 'where' que causa falha silenciosa de permissão/índice no Firebase.
+            // Agora baixamos a coleção e filtramos na memória, garantindo sincronização 100% em tempo real.
+            const qActive = collection(db, 'almoxarifado', appId, 'solicitacoes');
             
             unsubscribeActiveRequests = onSnapshot(qActive, (snapshot) => {
-                globalActiveSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - 30);
+                const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+                globalActiveSolicitacoes = [];
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.dataAgendamento && data.dataAgendamento >= cutoffStr) {
+                        globalActiveSolicitacoes.push({ id: doc.id, ...data });
+                    }
+                });
                 revalidateAllRows();
+                
+                // Atualiza o modal instantaneamente se ele estiver aberto na tela de outro professor
+                const modal = document.getElementById('item-selection-modal');
+                if (modal && !modal.classList.contains('hidden') && activeItemRow) {
+                    openItemModal();
+                }
+            }, (error) => {
+                console.error("Erro CRÍTICO no Firebase (Active Requests):", error);
             });
 
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
@@ -638,15 +655,15 @@
         }
 
         function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
-            // Este é o Estoque Total Físico (ex: A escola tem 20 tesouras no total).
-            // O almoxarifado NÃO deve alterar o item.quantity quando o professor retirar tesouras, apenas mudar o status da solicitação.
-            const currentTotalStock = item.quantity || 0;
-            let reservationsOnDate = 0;
+            const baseStock = Number(item.quantity) || 0;
+            let pendingReservations = 0;
             const holders = new Set();
             
-            // Verifica todas as solicitações ativas no sistema (Pendentes, Em Uso, etc)
+            // Verificamos as solicitações ativas para subtrair APENAS o que ainda não foi baixado pelo admin
+            // Se o admin mudou o status (Aprovado, Concluída), assumimos que ele JÁ descontou do banco.
             for (const sol of globalActiveSolicitacoes) {
-                if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
+                // Protege o estoque APENAS das solicitações Pendentes para o mesmo turno
+                if (sol.status === 'Pendente' && sol.dataAgendamento === targetDateStr) {
                     const solPeriod = sol.periodo || 'Integral'; 
                     let isConflict = false;
                     
@@ -657,16 +674,24 @@
                     if (isConflict) {
                         for (const solItem of sol.itensSolicitados) {
                             if (solItem.itemId === item.id) {
-                                reservationsOnDate += solItem.quantidade;
-                                if(sol.solicitanteName) holders.add(sol.solicitanteName);
+                                pendingReservations += Number(solItem.quantidade) || 0;
                             }
+                        }
+                    }
+                }
+                
+                // Apenas para mostrar na interface com quem está o item hoje
+                if (['Aprovado', 'Em Uso', 'Retirado', 'Entregue', 'Concluída'].includes(sol.status) && sol.dataAgendamento === targetDateStr) {
+                    for (const solItem of sol.itensSolicitados) {
+                        if (solItem.itemId === item.id && sol.solicitanteName) {
+                            holders.add(sol.solicitanteName);
                         }
                     }
                 }
             }
             
             return {
-                availableStock: currentTotalStock - reservationsOnDate,
+                availableStock: Math.max(0, baseStock - pendingReservations),
                 holders: Array.from(holders)
             };
         }
@@ -684,9 +709,9 @@
             const requestedQuantity = parseInt(quantityInput.value, 10);
 
             if (isKitCreation) {
-                const physicalStock = item.quantity || 0;
-                if (!isNaN(requestedQuantity) && requestedQuantity > physicalStock) {
-                     errorP.textContent = `Máx físico: ${physicalStock}`;
+                const totalStock = Number(item.quantity) || 0;
+                if (!isNaN(requestedQuantity) && requestedQuantity > totalStock) {
+                     errorP.textContent = `Máx estoque: ${totalStock}`;
                      errorP.classList.remove('hidden');
                      quantityInput.classList.add('border-red-500');
                 } else {
@@ -792,7 +817,7 @@
                 let holdersSet = new Set();
                 
                 if (isKitCreation) {
-                    minAvail = item.quantity || 0;
+                    minAvail = Number(item.quantity) || 0;
                 } else {
                     targetPeriodForModal.forEach(p => {
                         const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
@@ -825,15 +850,15 @@
                     btn.className = `item-button text-left p-2 rounded-md border transition-all ${isUnavailable ? 'bg-red-50 border-red-100 opacity-60' : 'bg-gray-50 hover:bg-blue-50 hover:border-blue-300'}`;
                     if(isUnavailable) btn.disabled = true;
 
-                    const stockText = isKitCreation ? 'Físico Total' : 'Disponível';
+                    const stockText = isKitCreation ? 'Estoque Físico' : 'Disp. no Turno';
                     const holderText = !isKitCreation && item.holders.length > 0 ? `Com: ${item.holders[0]}` : '';
 
                     btn.innerHTML = `
-                        <div class="flex justify-between w-full">
+                        <div class="flex justify-between w-full items-center">
                             <span class="font-semibold text-gray-700 text-sm">${item.name}</span>
                             <span class="text-xs font-bold ${isUnavailable ? 'text-red-500' : 'text-green-600'}">${item.availableStock}</span>
                         </div>
-                        <div class="flex justify-between mt-1">
+                        <div class="flex justify-between mt-1 items-center">
                             <span class="text-[10px] text-gray-500">${stockText}</span>
                             ${isUnavailable ? `<span class="text-[10px] text-red-400 truncate max-w-[80px]" title="${item.holders.join(', ')}">${holderText}</span>` : ''}
                         </div>
