@@ -486,6 +486,8 @@
         let selectedDates = []; 
         let editingKitId = null;
         let localKits = [];
+        let globalActiveRetiradas = [];
+        let unsubscribeActiveRetiradas; 
 
         // --- Listeners do Firebase (para detach) ---
         let unsubscribeItems, unsubscribePending, unsubscribeMyHistory, unsubscribeSolicitacoesCompra;
@@ -757,6 +759,12 @@
                 revalidateAllRows();
             });
 
+            const qRetiradas = query(getCollectionRef('retiradas'), where("status", "in", ["Pendente", "Devolvido Parcialmente"]));
+unsubscribeActiveRetiradas = onSnapshot(qRetiradas, (snapshot) => {
+    globalActiveRetiradas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    revalidateAllRows();
+});
+
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
             unsubscribeMyHistory = onSnapshot(qMyHistory, (snapshot) => {
                 const newSolicitacoes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -784,36 +792,59 @@
             return Array.from(periodosContainer.querySelectorAll('input[name="periodo"]:checked')).map(cb => cb.value);
         }
 
-        function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
-            const currentPhysicalStock = item.quantity || 0;
-            let reservationsOnDate = 0;
-            const holders = new Set();
-            
-            for (const sol of globalPendingSolicitacoes) {
-                if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
-                    const solPeriod = sol.periodo || 'Integral'; 
-                    let isConflict = false;
-                    
-                    if (targetPeriod === 'Integral' || solPeriod === 'Integral' || targetPeriod === solPeriod) {
-                        isConflict = true;
-                    }
+function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
+    const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+    let reservationsOnDate = 0;
+    const holders = new Set();
+    
+    // 1. Abate as Solicitações que ainda estão Pendentes
+    for (const sol of globalPendingSolicitacoes) {
+        if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
+            const solPeriod = sol.periodo || 'Integral'; 
+            let isConflict = (targetPeriod === 'Integral' || solPeriod === 'Integral' || targetPeriod === solPeriod);
 
-                    if (isConflict) {
-                        for (const solItem of sol.itensSolicitados) {
-                            if (solItem.itemId === item.id) {
-                                reservationsOnDate += solItem.quantidade;
-                                if(sol.solicitanteName) holders.add(sol.solicitanteName);
-                            }
+            if (isConflict) {
+                for (const solItem of sol.itensSolicitados) {
+                    if (solItem.itemId === item.id) {
+                        reservationsOnDate += solItem.quantidade;
+                        if(sol.solicitanteName) holders.add(sol.solicitanteName);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Abate as Retiradas Físicas que o almoxarifado já aprovou
+    for (const ret of globalActiveRetiradas) {
+        if (ret.dataRetirada && ret.dataRetirada === targetDateStr) {
+            // Se o admin salvou o período, usamos ele. Se foi manual, bloqueia o dia todo (Integral)
+            const retPeriod = ret.periodo || 'Integral';
+            let isConflict = (targetPeriod === 'Integral' || retPeriod === 'Integral' || targetPeriod === retPeriod);
+
+            if (isConflict) {
+                for (const retItem of ret.itens) {
+                    if (retItem.itemId === item.id) {
+                        // Subtrai apenas a quantidade que o professor ainda não devolveu
+                        const pendingQty = retItem.quantidade - (retItem.quantidadeDevolvida || 0);
+                        if (pendingQty > 0) {
+                            reservationsOnDate += pendingQty;
+                            if(ret.professorName) holders.add(ret.professorName);
                         }
                     }
                 }
             }
-            
-            return {
-                availableStock: currentPhysicalStock - reservationsOnDate,
-                holders: Array.from(holders)
-            };
         }
+    }
+    
+    return {
+        availableStock: baseStock - reservationsOnDate,
+        holders: Array.from(holders)
+    };
+}
+
+
+
+
 
         function handleStockValidation(rowDiv) {
             const itemId = rowDiv.dataset.itemId;
@@ -827,18 +858,19 @@
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
 
-            if (isKitCreation) {
-                const physicalStock = item.quantity || 0;
-                if (!isNaN(requestedQuantity) && requestedQuantity > physicalStock) {
-                     errorP.textContent = `Máx físico: ${physicalStock}`;
-                     errorP.classList.remove('hidden');
-                     quantityInput.classList.add('border-red-500');
-                } else {
-                     errorP.classList.add('hidden');
-                     quantityInput.classList.remove('border-red-500');
-                }
-                return;
-            }
+if (isKitCreation) {
+    // CORREÇÃO: Kits também devem se basear no total existente
+    const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+    if (!isNaN(requestedQuantity) && requestedQuantity > baseStock) {
+         errorP.textContent = `Máx total: ${baseStock}`;
+         errorP.classList.remove('hidden');
+         quantityInput.classList.add('border-red-500');
+    } else {
+         errorP.classList.add('hidden');
+         quantityInput.classList.remove('border-red-500');
+    }
+    return;
+}
 
             // Normal Request Validation
             const targetDate = dataAgendamentoInput.value;
@@ -932,24 +964,25 @@
 
             const categorizedItems = {};
             
-            localItems.forEach(item => {
-                let minAvail = 9999;
-                let holdersSet = new Set();
-                
-                if (isKitCreation) {
-                    minAvail = item.quantity || 0;
-                } else {
-                    targetPeriodForModal.forEach(p => {
-                        const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
-                        if (availableStock < minAvail) minAvail = availableStock;
-                        holders.forEach(h => holdersSet.add(h));
-                    });
-                }
+localItems.forEach(item => {
+    let minAvail = 9999;
+    let holdersSet = new Set();
+    
+    if (isKitCreation) {
+        // CORREÇÃO: Modal mostra o total da escola
+        minAvail = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+    } else {
+        targetPeriodForModal.forEach(p => {
+            const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
+            if (availableStock < minAvail) minAvail = availableStock;
+            holders.forEach(h => holdersSet.add(h));
+        });
+    }
 
-                const catName = categoriesCache && categoriesCache.has(item.categoryId) ? categoriesCache.get(item.categoryId) : 'Outros';
-                if (!categorizedItems[catName]) categorizedItems[catName] = [];
-                categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
-            });
+    const catName = categoriesCache && categoriesCache.has(item.categoryId) ? categoriesCache.get(item.categoryId) : 'Outros';
+    if (!categorizedItems[catName]) categorizedItems[catName] = [];
+    categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
+});
 
             Object.keys(categorizedItems).sort().forEach(cat => {
                 const details = document.createElement('details');
@@ -970,7 +1003,7 @@
                     btn.className = `item-button text-left p-2 rounded-md border transition-all ${isUnavailable ? 'bg-red-50 border-red-100 opacity-60' : 'bg-gray-50 hover:bg-blue-50 hover:border-blue-300'}`;
                     if(isUnavailable) btn.disabled = true;
 
-                    const stockText = isKitCreation ? 'Físico' : 'Disp';
+                    const stockText = isKitCreation ? 'Total' : 'Disp';
                     const holderText = !isKitCreation && item.holders.length > 0 ? `Com: ${item.holders[0]}` : '';
 
                     btn.innerHTML = `
