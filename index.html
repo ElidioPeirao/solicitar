@@ -472,9 +472,6 @@
             });
         }
 
-        // --- REMOVIDO SISTEMA DE CACHE DE DISCO ---
-        // Agora usamos apenas variáveis em memória RAM para a sessão atual
-
         // --- Estado Global ---
         let localItems = []; 
         let globalPendingSolicitacoes = []; 
@@ -664,7 +661,6 @@
                     // Inicia funcionalidades
                     attachRealtimeListeners();
                     renderKits();
-                    // initProfessorChat(professor); // Chat desativado temporariamente
 
                 } else {
                     matriculaError.textContent = 'Matrícula não encontrada.';
@@ -760,10 +756,10 @@
             });
 
             const qRetiradas = query(getCollectionRef('retiradas'), where("status", "in", ["Pendente", "Devolvido Parcialmente"]));
-unsubscribeActiveRetiradas = onSnapshot(qRetiradas, (snapshot) => {
-    globalActiveRetiradas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    revalidateAllRows();
-});
+            unsubscribeActiveRetiradas = onSnapshot(qRetiradas, (snapshot) => {
+                globalActiveRetiradas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                revalidateAllRows();
+            });
 
             const qMyHistory = query(getCollectionRef('solicitacoes'), where("solicitanteId", "==", currentProfessor.id));
             unsubscribeMyHistory = onSnapshot(qMyHistory, (snapshot) => {
@@ -792,59 +788,55 @@ unsubscribeActiveRetiradas = onSnapshot(qRetiradas, (snapshot) => {
             return Array.from(periodosContainer.querySelectorAll('input[name="periodo"]:checked')).map(cb => cb.value);
         }
 
-function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
-    const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
-    let reservationsOnDate = 0;
-    const holders = new Set();
-    
-    // 1. Abate as Solicitações que ainda estão Pendentes
-    for (const sol of globalPendingSolicitacoes) {
-        if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
-            const solPeriod = sol.periodo || 'Integral'; 
-            let isConflict = (targetPeriod === 'Integral' || solPeriod === 'Integral' || targetPeriod === solPeriod);
+        function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
+            const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+            let reservationsOnDate = 0;
+            const holders = new Set();
+            
+            // 1. Abate as Solicitações que ainda estão Pendentes
+            for (const sol of globalPendingSolicitacoes) {
+                if (sol.dataAgendamento && sol.dataAgendamento === targetDateStr) {
+                    const solPeriod = sol.periodo || 'Integral'; 
+                    let isConflict = (targetPeriod === 'Integral' || solPeriod === 'Integral' || targetPeriod === solPeriod);
 
-            if (isConflict) {
-                for (const solItem of sol.itensSolicitados) {
-                    if (solItem.itemId === item.id) {
-                        reservationsOnDate += solItem.quantidade;
-                        if(sol.solicitanteName) holders.add(sol.solicitanteName);
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Abate as Retiradas Físicas que o almoxarifado já aprovou
-    for (const ret of globalActiveRetiradas) {
-        if (ret.dataRetirada && ret.dataRetirada === targetDateStr) {
-            // Se o admin salvou o período, usamos ele. Se foi manual, bloqueia o dia todo (Integral)
-            const retPeriod = ret.periodo || 'Integral';
-            let isConflict = (targetPeriod === 'Integral' || retPeriod === 'Integral' || targetPeriod === retPeriod);
-
-            if (isConflict) {
-                for (const retItem of ret.itens) {
-                    if (retItem.itemId === item.id) {
-                        // Subtrai apenas a quantidade que o professor ainda não devolveu
-                        const pendingQty = retItem.quantidade - (retItem.quantidadeDevolvida || 0);
-                        if (pendingQty > 0) {
-                            reservationsOnDate += pendingQty;
-                            if(ret.professorName) holders.add(ret.professorName);
+                    if (isConflict) {
+                        for (const solItem of sol.itensSolicitados) {
+                            if (solItem.itemId === item.id) {
+                                reservationsOnDate += solItem.quantidade;
+                                if(sol.solicitanteName) holders.add(sol.solicitanteName);
+                            }
                         }
                     }
                 }
             }
+
+            // 2. Abate as Retiradas Físicas que o almoxarifado já aprovou
+            for (const ret of globalActiveRetiradas) {
+                if (ret.dataRetirada && ret.dataRetirada === targetDateStr) {
+                    // Se o admin salvou o período, usamos ele. Se foi manual, bloqueia o dia todo (Integral)
+                    const retPeriod = ret.periodo || 'Integral';
+                    let isConflict = (targetPeriod === 'Integral' || retPeriod === 'Integral' || targetPeriod === retPeriod);
+
+                    if (isConflict) {
+                        for (const retItem of ret.itens) {
+                            if (retItem.itemId === item.id) {
+                                // Subtrai apenas a quantidade que o professor ainda não devolveu
+                                const pendingQty = retItem.quantidade - (retItem.quantidadeDevolvida || 0);
+                                if (pendingQty > 0) {
+                                    reservationsOnDate += pendingQty;
+                                    if(ret.professorName) holders.add(ret.professorName);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return {
+                availableStock: baseStock - reservationsOnDate,
+                holders: Array.from(holders)
+            };
         }
-    }
-    
-    return {
-        availableStock: baseStock - reservationsOnDate,
-        holders: Array.from(holders)
-    };
-}
-
-
-
-
 
         function handleStockValidation(rowDiv) {
             const itemId = rowDiv.dataset.itemId;
@@ -858,26 +850,26 @@ function calculateStockAndHolders(item, targetDateStr, targetPeriod) {
             const errorP = rowDiv.querySelector('.error-message');
             const requestedQuantity = parseInt(quantityInput.value, 10);
 
-if (isKitCreation) {
-    // CORREÇÃO: Kits também devem se basear no total existente
-    const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
-    if (!isNaN(requestedQuantity) && requestedQuantity > baseStock) {
-         errorP.textContent = `Máx total: ${baseStock}`;
-         errorP.classList.remove('hidden');
-         quantityInput.classList.add('border-red-500');
-    } else {
-         errorP.classList.add('hidden');
-         quantityInput.classList.remove('border-red-500');
-    }
-    return;
-}
+            if (isKitCreation) {
+                // CORREÇÃO: Kits também devem se basear no total existente
+                const baseStock = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+                if (!isNaN(requestedQuantity) && requestedQuantity > baseStock) {
+                     errorP.textContent = `Máx total: ${baseStock}`;
+                     errorP.classList.remove('hidden');
+                     quantityInput.classList.add('border-red-500');
+                } else {
+                     errorP.classList.add('hidden');
+                     quantityInput.classList.remove('border-red-500');
+                }
+                return;
+            }
 
             // Normal Request Validation
             const targetDate = dataAgendamentoInput.value;
             const selectedPeriods = getSelectedPeriods();
             
             if (selectedPeriods.length === 0) {
-                errorP.textContent = "Selecione um período.";
+                errorP.textContent = "Selecione um período válido.";
                 errorP.classList.remove('hidden');
                 return;
             }
@@ -908,6 +900,68 @@ if (isKitCreation) {
 
         function revalidateAllRows() {
             document.querySelectorAll('#itens-list .item-row').forEach(row => handleStockValidation(row));
+        }
+
+        // --- LÓGICA DE CONTROLE DE HORÁRIOS DISPONÍVEIS ---
+        
+        function updateAvailablePeriods() {
+            const selectedDate = dataAgendamentoInput.value;
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const currentHour = today.getHours();
+
+            const checkboxes = {
+                Manhã: periodosContainer.querySelector('input[value="Manhã"]'),
+                Tarde: periodosContainer.querySelector('input[value="Tarde"]'),
+                Noite: periodosContainer.querySelector('input[value="Noite"]'),
+                Integral: periodosContainer.querySelector('input[value="Integral"]')
+            };
+
+            // Reseta todos para o estado habilitado
+            Object.values(checkboxes).forEach(cb => {
+                if(cb) {
+                    cb.disabled = false;
+                    cb.parentElement.classList.remove('opacity-50', 'pointer-events-none');
+                }
+            });
+
+            // Aplica a regra de bloqueio se a data escolhida for hoje
+            if (selectedDate === todayStr) {
+                // Se passou do meio dia (12h), bloqueia "Manhã" e "Integral"
+                if (currentHour >= 12) {
+                    disablePeriod(checkboxes['Manhã']);
+                    disablePeriod(checkboxes['Integral']);
+                }
+                // Se passou das 18h, bloqueia "Tarde"
+                if (currentHour >= 18) {
+                    disablePeriod(checkboxes['Tarde']);
+                }
+            }
+
+            adjustSelectedPeriods();
+        }
+
+        function disablePeriod(cb) {
+            if(!cb) return;
+            cb.disabled = true;
+            cb.checked = false;
+            cb.parentElement.classList.add('opacity-50', 'pointer-events-none');
+        }
+
+        function adjustSelectedPeriods() {
+            const checked = Array.from(periodosContainer.querySelectorAll('input[name="periodo"]:checked'));
+            
+            // Se nenhum estiver marcado (ex: a Manhã estava marcada, mas foi bloqueada agora)
+            if (checked.length === 0) {
+                // Marca o primeiro período que ainda estiver disponível
+                const firstAvailable = periodosContainer.querySelector('input[name="periodo"]:not(:disabled)');
+                if (firstAvailable) {
+                    firstAvailable.checked = true;
+                }
+            }
+
+            const sels = getSelectedPeriods();
+            periodoSelectedText.textContent = sels.length === 0 ? "Indisponível" : (sels.includes('Integral') ? "Integral" : sels.join(', '));
         }
 
         // --- FORMULARIO LOGIC ---
@@ -964,25 +1018,25 @@ if (isKitCreation) {
 
             const categorizedItems = {};
             
-localItems.forEach(item => {
-    let minAvail = 9999;
-    let holdersSet = new Set();
-    
-    if (isKitCreation) {
-        // CORREÇÃO: Modal mostra o total da escola
-        minAvail = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
-    } else {
-        targetPeriodForModal.forEach(p => {
-            const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
-            if (availableStock < minAvail) minAvail = availableStock;
-            holders.forEach(h => holdersSet.add(h));
-        });
-    }
+            localItems.forEach(item => {
+                let minAvail = 9999;
+                let holdersSet = new Set();
+                
+                if (isKitCreation) {
+                    // CORREÇÃO: Modal mostra o total da escola
+                    minAvail = item.totalQuantity !== undefined ? item.totalQuantity : (item.quantity || 0);
+                } else {
+                    targetPeriodForModal.forEach(p => {
+                        const { availableStock, holders } = calculateStockAndHolders(item, targetDate, p);
+                        if (availableStock < minAvail) minAvail = availableStock;
+                        holders.forEach(h => holdersSet.add(h));
+                    });
+                }
 
-    const catName = categoriesCache && categoriesCache.has(item.categoryId) ? categoriesCache.get(item.categoryId) : 'Outros';
-    if (!categorizedItems[catName]) categorizedItems[catName] = [];
-    categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
-});
+                const catName = categoriesCache && categoriesCache.has(item.categoryId) ? categoriesCache.get(item.categoryId) : 'Outros';
+                if (!categorizedItems[catName]) categorizedItems[catName] = [];
+                categorizedItems[catName].push({ ...item, availableStock: minAvail, holders: Array.from(holdersSet) });
+            });
 
             Object.keys(categorizedItems).sort().forEach(cat => {
                 const details = document.createElement('details');
@@ -1062,7 +1116,7 @@ localItems.forEach(item => {
         addDateBtn.addEventListener('click', () => {
             const dateVal = dataAgendamentoInput.value;
             const selectedPeriods = getSelectedPeriods();
-            if (!dateVal || selectedPeriods.length === 0) return alert('Selecione data e período.');
+            if (!dateVal || selectedPeriods.length === 0) return alert('Selecione data e período válidos.');
             
             let added = 0;
             selectedPeriods.forEach(p => {
@@ -1103,7 +1157,7 @@ localItems.forEach(item => {
                 getSelectedPeriods().forEach(p => dates.push({date: dataAgendamentoInput.value, period: p}));
             }
 
-            if(dates.length === 0) text += "(Selecione data/período)";
+            if(dates.length === 0) text += "(Selecione data/período válido)";
             else dates.forEach(d => {
                 const fmt = new Date(d.date+'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
                 text += `- ${fmt} (${d.period})\n`;
@@ -1146,7 +1200,7 @@ localItems.forEach(item => {
             }
 
             if(targets.length === 0) {
-                alert('Defina as datas.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
+                alert('Defina as datas e períodos válidos.'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Enviar'; return;
             }
 
             // Itens
@@ -1421,19 +1475,27 @@ localItems.forEach(item => {
             document.getElementById('success-modal').classList.remove('hidden');
         };
 
-        // Init
-        dataAgendamentoInput.value = new Date().toISOString().split('T')[0];
-        dataAgendamentoInput.addEventListener('change', () => { revalidateAllRows(); renderSystemObs(); });
+        // --- INICIALIZAÇÃO E AÇÕES PRINCIPAIS ---
         
-        // APENAS UMA CHAMADA PARA CADA - Corrigido duplicidade
+        const todayStr = new Date().toISOString().split('T')[0];
+        dataAgendamentoInput.min = todayStr; // Impede a seleção de datas do passado
+        dataAgendamentoInput.value = todayStr;
+
+        dataAgendamentoInput.addEventListener('change', () => { 
+            updateAvailablePeriods();
+            revalidateAllRows(); 
+            renderSystemObs(); 
+        });
+        
+        // APENAS UMA CHAMADA PARA CADA
         createItemRow('itens-list');
         createItemRow('kit-itens-list');
         
         document.getElementById('itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
         document.getElementById('kit-itens-list').addEventListener('click', e => { if(e.target.closest('.remove-item-btn')) e.target.closest('.item-row').remove(); });
 
-        // Força atualização da observação inicial
-        renderSystemObs();
+        // Valida e aplica regras de horário na abertura
+        updateAvailablePeriods();
 
     </script>
 </body>
